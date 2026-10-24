@@ -125,6 +125,19 @@ def cargar_datos():
     gdf_geo[NOMBRE_COL] = gdf_geo[NOMBRE_COL].apply(normalizar_nombre_depto)
     gdf_geo = gdf_geo[[COD_DANE_COL, NOMBRE_COL, "geometry"]]
 
+    # Función auxiliar para encontrar años en los encabezados de forma segura
+    def extraer_anios(headers):
+        year_pos = {}
+        for j, c in enumerate(headers):
+            if j > 1:
+                # Extrae solo los dígitos del encabezado (ej. "2019 (p)" -> "2019")
+                digits = ''.join(filter(str.isdigit, str(c)))
+                if len(digits) >= 4:
+                    anio = int(digits[:4])
+                    if 1990 <= anio <= 2030: # Validación de sentido común
+                        year_pos[anio] = j
+        return year_pos
+
     # Industria (CORREGIDO)
     df_ind = leer_excel_drive(ID_INDUSTRIA, sheet_name="Cuadro 2", header=None)
     titulo_idx = next((i for i in range(len(df_ind)) if "Industrias manufactureras" in str(df_ind.iloc[i, 0])), None)
@@ -139,11 +152,16 @@ def cargar_datos():
                 
     if header_idx is None:
         st.error("No se pudo encontrar la fila de encabezados en el Excel de Industria.")
-        st.write(df_ind.head(30))
         st.stop()
 
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_ind.iloc[header_idx])]
-    year_pos = {int(float(str(c).replace("p","").replace("r","").replace(".0","").strip())): j for j, c in enumerate(headers) if j > 1 and str(c).replace("p","").replace("r","").replace(".0","").strip().isdigit()}
+    year_pos = extraer_anios(headers)
+    
+    if not year_pos:
+        st.error("No se encontraron años en los encabezados de Industria.")
+        st.write(headers)
+        st.stop()
+        
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
     df_ind_clean = df_ind.iloc[header_idx+1:header_idx+40].copy()
     df_ind_clean.columns = headers
@@ -165,11 +183,16 @@ def cargar_datos():
             
     if header_idx is None:
         st.error("No se pudo encontrar la fila de encabezados en el Excel de PIB.")
-        st.write(df_pib.head(30))
         st.stop()
 
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_pib.iloc[header_idx])]
-    year_pos = {int(float(str(c).replace("p","").replace("r","").replace(".0","").strip())): j for j, c in enumerate(headers) if j > 1 and str(c).replace("p","").replace("r","").replace(".0","").strip().isdigit()}
+    year_pos = extraer_anios(headers)
+    
+    if not year_pos:
+        st.error("No se encontraron años en los encabezados de PIB.")
+        st.write(headers)
+        st.stop()
+        
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
     df_pib_clean = df_pib.iloc[header_idx+1:].copy()
     df_pib_clean.columns = headers
@@ -191,11 +214,16 @@ def cargar_datos():
             
     if header_idx is None:
         st.error("No se pudo encontrar la fila de encabezados en el Excel de Educación.")
-        st.write(df_edu.head(30))
         st.stop()
 
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_edu.iloc[header_idx])]
-    year_pos = {int(float(str(c).replace("p","").replace("r","").replace(".0","").strip())): j for j, c in enumerate(headers) if str(c).replace("p","").replace("r","").replace(".0","").strip().isdigit()}
+    year_pos = extraer_anios(headers)
+    
+    if not year_pos:
+        st.error("No se encontraron años en los encabezados de Educación.")
+        st.write(headers)
+        st.stop()
+
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
     df_edu_clean = df_edu.iloc[header_idx+1:].copy()
     df_edu_clean.columns = headers
@@ -207,12 +235,20 @@ def cargar_datos():
     educacion[NOMBRE_COL] = educacion["raw_name"].apply(normalizar_nombre_depto)
     educacion = educacion[[NOMBRE_COL, "educacion_superior"]].drop_duplicates(NOMBRE_COL)
 
-    # Gini
+    # Gini (Blindado contra errores de columnas)
     path_gini = descargar_de_drive(ID_GINI, extension="json")
     with open(path_gini, 'r', encoding='utf-8') as f: data = json.load(f)
     df_gini = pd.DataFrame([feat["attributes"] for feat in data.get("features", [])])
-    code_col = next(c for c in df_gini.columns if "CCDGO" in c.upper() or "COD" in c.upper())
-    val_col = sorted([c for c in df_gini.columns if "GINI" in c.upper()])[-1]
+    
+    code_col = next((c for c in df_gini.columns if "CCDGO" in c.upper() or "COD" in c.upper()), None)
+    gini_cols = sorted([c for c in df_gini.columns if "GINI" in c.upper()])
+    
+    if not code_col or not gini_cols:
+        st.error("Error en el JSON de Gini: No se encontraron las columnas de código o de Gini.")
+        st.write(df_gini.columns.tolist())
+        st.stop()
+        
+    val_col = gini_cols[-1]
     gini = df_gini[[code_col, val_col]].copy()
     gini.columns = [COD_DANE_COL, "gini"]
     gini[COD_DANE_COL] = clean_cod_dane(gini[COD_DANE_COL])
@@ -220,7 +256,13 @@ def cargar_datos():
     gini = gini.dropna().drop_duplicates(COD_DANE_COL)
 
     # Población (Esri)
-    total_mpios = consultar_arcgis(URL_POBLACION, {"where": "1=1", "returnCountOnly": "true", "f": "json"})["count"]
+    resp_count = consultar_arcgis(URL_POBLACION, {"where": "1=1", "returnCountOnly": "true", "f": "json"})
+    if "count" not in resp_count:
+        st.error("Error al conectar con la API de población de ESRI.")
+        st.write(resp_count)
+        st.stop()
+        
+    total_mpios = resp_count["count"]
     atributos_pob = []
     for offset in range(0, total_mpios, 250):
         params = {"where": "1=1", "outFields": "DPTO_CNMBR,TotalPob", "returnGeometry": "false", "resultOffset": offset, "resultRecordCount": 250, "f": "json"}
