@@ -103,7 +103,7 @@ def leer_excel_drive(file_id, sheet_name, header=None):
 # ==========================================
 @st.cache_data(show_spinner="Cargando datos y construyendo variables...")
 def cargar_datos():
-    import re # Importamos re para buscar años de forma segura
+    import re
 
     # --- 1. GEOMETRÍA ---
     gdf_geo = gpd.read_file(URL_GEOMETRIA)
@@ -120,12 +120,10 @@ def cargar_datos():
     gdf_geo[NOMBRE_COL] = gdf_geo[NOMBRE_COL].apply(normalizar_nombre_depto)
     gdf_geo = gdf_geo[[COD_DANE_COL, NOMBRE_COL, "geometry"]]
 
-    # --- FUNCIÓN AUXILIAR CORREGIDA ---
     def extraer_anios(headers):
         year_pos = {}
         for j, c in enumerate(headers):
             if j > 0:
-                # Busca cualquier número de 4 dígitos que empiece con 19 o 20 (ej. "2019", "2019 (p)", "Año 2019")
                 match = re.search(r'(19|20)\d{2}', str(c))
                 if match:
                     anio = int(match.group(0))
@@ -139,9 +137,11 @@ def cargar_datos():
     
     header_idx = None
     if titulo_idx is not None:
-        for i in range(titulo_idx + 1, min(titulo_idx + 20, len(df_ind))):
-            row_str = " ".join(map(str, df_ind.iloc[i].values)).upper()
-            if "DEPARTAMENTO" in row_str and ("2019" in row_str or "2018" in row_str or "2015" in row_str):
+        for i in range(titulo_idx + 1, min(titulo_idx + 30, len(df_ind))):
+            row_values = df_ind.iloc[i].values
+            row_str = " ".join(map(str, row_values)).upper()
+            # La clave: sum(pd.notna(...)) > 3 obliga a ignorar los títulos
+            if "DEPARTAMENTO" in row_str and ("2019" in row_str or "2018" in row_str or "2015" in row_str) and sum(pd.notna(val) for val in row_values) > 3:
                 header_idx = i
                 break
                 
@@ -151,10 +151,8 @@ def cargar_datos():
 
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_ind.iloc[header_idx])]
     year_pos = extraer_anios(headers)
-    
     if not year_pos:
         st.error("No se encontraron años en los encabezados de Industria.")
-        st.write(headers)
         st.stop()
 
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
@@ -171,8 +169,10 @@ def cargar_datos():
     df_pib = leer_excel_drive(ID_PIB_PC, sheet_name="Cuadro 3", header=None)
     header_idx = None
     for i in range(min(30, len(df_pib))):
-        row_str = " ".join(map(str, df_pib.iloc[i].values)).upper()
-        if "DEPARTAMENTO" in row_str and ("2019" in row_str or "2018" in row_str or "2015" in row_str):
+        row_values = df_pib.iloc[i].values
+        row_str = " ".join(map(str, row_values)).upper()
+        # La clave: sum(pd.notna(...)) > 3
+        if "DEPARTAMENTO" in row_str and ("2019" in row_str or "2018" in row_str or "2015" in row_str) and sum(pd.notna(val) for val in row_values) > 3:
             header_idx = i
             break
             
@@ -182,10 +182,8 @@ def cargar_datos():
 
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_pib.iloc[header_idx])]
     year_pos = extraer_anios(headers)
-    
     if not year_pos:
         st.error("No se encontraron años en los encabezados de PIB.")
-        st.write(headers)
         st.stop()
 
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
@@ -202,8 +200,10 @@ def cargar_datos():
     df_edu = leer_excel_drive(ID_EDUCACION, sheet_name="TCB_Depto Censo 2018", header=None)
     header_idx = None
     for i in range(min(30, len(df_edu))):
-        row_str = " ".join(map(str, df_edu.iloc[i].values)).upper()
-        if "DEPARTAMENTO" in row_str and ("2019" in row_str or "2018" in row_str or "2015" in row_str):
+        row_values = df_edu.iloc[i].values
+        row_str = " ".join(map(str, row_values)).upper()
+        # La clave: sum(pd.notna(...)) > 3
+        if "DEPARTAMENTO" in row_str and ("2019" in row_str or "2018" in row_str or "2015" in row_str) and sum(pd.notna(val) for val in row_values) > 3:
             header_idx = i
             break
             
@@ -213,10 +213,8 @@ def cargar_datos():
 
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_edu.iloc[header_idx])]
     year_pos = extraer_anios(headers)
-    
     if not year_pos:
         st.error("No se encontraron años en los encabezados de Educación.")
-        st.write(headers)
         st.stop()
 
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
@@ -290,7 +288,6 @@ def cargar_datos():
     gdf["log_poblacion"] = np.log(gdf["poblacion"].clip(lower=1e-6))
 
     return gdf
-
 # ==========================================
 # 3. MODELADO ESPACIAL COMPLETO Y SpVAR
 # ==========================================
