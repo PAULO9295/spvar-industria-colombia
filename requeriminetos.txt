@@ -1,0 +1,15 @@
+streamlit
+pandas
+numpy
+geopandas
+libpysal
+esda
+spreg
+plotly
+matplotlib
+openpyxl
+requests
+gdown
+scikit-learn
+statsmodels
+shapely
