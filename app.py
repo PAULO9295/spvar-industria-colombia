@@ -527,12 +527,17 @@ tab1, tab2, tab3, tab4 = st.tabs(["1 · Diagnóstico", "2 · Mapas y LISA", "3 �
 
 with tab1:
     st.header("Diagnóstico del Modelo")
-    st.dataframe([
+    
+    # Creamos un DataFrame de Pandas con los datos y los nombres de las columnas
+    df_diag = pd.DataFrame([
         ["Moran's I (Y)", f"{res['mi_Y'].I:.4f}", f"p={res['mi_Y'].p_sim:.4f}"],
         ["Modelo (AIC)", res["best_spec_name"], f"AIC={res['best_model'].aic:.2f}"],
         ["ρ (rho)", f"{res['rho_ui']:.4f}", "Contagio espacial de Y"],
         ["λ (lambda)", f"{res['lambda_ui']:.4f}", "Correlación de errores"]
-    ], headers=["Métrica", "Valor", "Detalle"], use_container_width=True)
+    ], columns=["Métrica", "Valor", "Detalle"])
+    
+    # Ahora sí, le pasamos el DataFrame a Streamlit
+    st.dataframe(df_diag, use_container_width=True)
 
     st.markdown("### Coeficientes del Modelo")
     st.json(res["betas_dict"])
