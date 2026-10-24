@@ -110,43 +110,38 @@ def leer_excel_drive(file_id, sheet_name, header=None):
 # ==========================================
 @st.cache_data(show_spinner="Cargando datos y construyendo variables...")
 def cargar_datos():
-    # Geometría
+    # Geometría (CORREGIDO)
     gdf_geo = gpd.read_file(URL_GEOMETRIA)
     rename = {}
     for c in gdf_geo.columns:
         cl = str(c).lower()
-        # Agregamos la condición exacta para 'dpto' y usamos elif
         if cl == "dpto" or any(x in cl for x in ["dpto_ccdgo", "cod_dpto", "codigo", "cod", "id"]): 
             rename[c] = COD_DANE_COL
         elif any(x in cl for x in ["nombre", "name", "dpto_cnmbr", "nom", "departamento"]): 
             rename[c] = NOMBRE_COL
             
     gdf_geo = gdf_geo.rename(columns=rename)
-    
-    # Ocultamos el st.write de depuración
-    # st.write("Columnas disponibles:", gdf_geo.columns.tolist())
-    
     gdf_geo[COD_DANE_COL] = clean_cod_dane(gdf_geo[COD_DANE_COL])
     gdf_geo[NOMBRE_COL] = gdf_geo[NOMBRE_COL].apply(normalizar_nombre_depto)
     gdf_geo = gdf_geo[[COD_DANE_COL, NOMBRE_COL, "geometry"]]
 
-    # Industria
+    # Industria (CORREGIDO)
     df_ind = leer_excel_drive(ID_INDUSTRIA, sheet_name="Cuadro 2", header=None)
-    titulo_idx = next(i for i in range(len(df_ind)) if "Industrias manufactureras" in str(df_ind.iloc[i, 0]))
+    titulo_idx = next((i for i in range(len(df_ind)) if "Industrias manufactureras" in str(df_ind.iloc[i, 0])), None)
     
-    # Buscamos el encabezado en un rango más amplio y aceptamos "DEPARTAMENTO"
     header_idx = None
-    for i in range(titulo_idx + 1, min(titulo_idx + 30, len(df_ind))):
-        row_str = " ".join(df_ind.iloc[i].astype(str).str.upper())
-        if "DEPARTAMENTO" in row_str:
-            header_idx = i
-            break
-            
-    # Si aún así no lo encuentra, mostramos un error claro y detenemos la app
+    if titulo_idx is not None:
+        for i in range(titulo_idx + 1, min(titulo_idx + 30, len(df_ind))):
+            row_str = " ".join(map(str, df_ind.iloc[i].values)).upper()
+            if "DEPARTAMENTO" in row_str:
+                header_idx = i
+                break
+                
     if header_idx is None:
-        st.error("No se pudo encontrar la fila de encabezados en el Excel de Industria. Revisa estas filas:")
-        st.write(df_ind.iloc[titulo_idx:titulo_idx+30])
+        st.error("No se pudo encontrar la fila de encabezados en el Excel de Industria.")
+        st.write(df_ind.head(30))
         st.stop()
+
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_ind.iloc[header_idx])]
     year_pos = {int(float(str(c).replace("p","").replace("r","").replace(".0","").strip())): j for j, c in enumerate(headers) if j > 1 and str(c).replace("p","").replace("r","").replace(".0","").strip().isdigit()}
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
@@ -159,9 +154,20 @@ def cargar_datos():
     industria[NOMBRE_COL] = industria["raw_name"].apply(normalizar_nombre_depto)
     industria = industria[[NOMBRE_COL, "industrializacion_constante"]].drop_duplicates(NOMBRE_COL)
 
-    # PIB pc
+    # PIB pc (CORREGIDO)
     df_pib = leer_excel_drive(ID_PIB_PC, sheet_name="Cuadro 3", header=None)
-    header_idx = next(i for i in range(15) if "DEPARTAMENTOS" in " ".join(df_pib.iloc[i].astype(str).str.upper()))
+    header_idx = None
+    for i in range(min(30, len(df_pib))):
+        row_str = " ".join(map(str, df_pib.iloc[i].values)).upper()
+        if "DEPARTAMENTO" in row_str:
+            header_idx = i
+            break
+            
+    if header_idx is None:
+        st.error("No se pudo encontrar la fila de encabezados en el Excel de PIB.")
+        st.write(df_pib.head(30))
+        st.stop()
+
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_pib.iloc[header_idx])]
     year_pos = {int(float(str(c).replace("p","").replace("r","").replace(".0","").strip())): j for j, c in enumerate(headers) if j > 1 and str(c).replace("p","").replace("r","").replace(".0","").strip().isdigit()}
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
@@ -174,9 +180,20 @@ def cargar_datos():
     pib_pc[NOMBRE_COL] = pib_pc["raw_name"].apply(normalizar_nombre_depto)
     pib_pc = pib_pc[[NOMBRE_COL, "pib_percapita"]].drop_duplicates(NOMBRE_COL)
 
-    # Educación
+    # Educación (CORREGIDO)
     df_edu = leer_excel_drive(ID_EDUCACION, sheet_name="TCB_Depto Censo 2018", header=None)
-    header_idx = next(i for i in range(15) if "DEPARTAMENTO" in " ".join(df_edu.iloc[i].astype(str).str.upper()))
+    header_idx = None
+    for i in range(min(30, len(df_edu))):
+        row_str = " ".join(map(str, df_edu.iloc[i].values)).upper()
+        if "DEPARTAMENTO" in row_str:
+            header_idx = i
+            break
+            
+    if header_idx is None:
+        st.error("No se pudo encontrar la fila de encabezados en el Excel de Educación.")
+        st.write(df_edu.head(30))
+        st.stop()
+
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_edu.iloc[header_idx])]
     year_pos = {int(float(str(c).replace("p","").replace("r","").replace(".0","").strip())): j for j, c in enumerate(headers) if str(c).replace("p","").replace("r","").replace(".0","").strip().isdigit()}
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
