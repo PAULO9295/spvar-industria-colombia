@@ -103,6 +103,7 @@ def leer_excel_drive(file_id, sheet_name, header=None):
 # ==========================================
 @st.cache_data(show_spinner="Cargando datos y construyendo variables...")
 def cargar_datos():
+    # --- 1. GEOMETRÍA ---
     gdf_geo = gpd.read_file(URL_GEOMETRIA)
     rename = {}
     for c in gdf_geo.columns:
@@ -117,10 +118,12 @@ def cargar_datos():
     gdf_geo[NOMBRE_COL] = gdf_geo[NOMBRE_COL].apply(normalizar_nombre_depto)
     gdf_geo = gdf_geo[[COD_DANE_COL, NOMBRE_COL, "geometry"]]
 
+    # --- FUNCIONES AUXILIARES SEGURAS ---
     def buscar_header(df, keyword="DEPARTAMENTO"):
         for i in range(min(40, len(df))):
             row_values = df.iloc[i].values
             row_str = " ".join(map(str, row_values)).upper()
+            # Exigimos que tenga la palabra Y que la fila tenga al menos 3 datos llenos
             if keyword in row_str and sum(pd.notna(val) for val in row_values) >= 3:
                 return i
         return None
@@ -136,9 +139,22 @@ def cargar_datos():
                         year_pos[anio] = j
         return year_pos
 
-    # Industria
+    # --- 2. INDUSTRIA (Lógica de Colab restaurada) ---
     df_ind = leer_excel_drive(ID_INDUSTRIA, sheet_name="Cuadro 2", header=None)
-    header_idx = buscar_header(df_ind, "DEPARTAMENTO")
+    titulo_idx = next((i for i in range(len(df_ind)) if "Industrias manufactureras" in str(df_ind.iloc[i, 0])), None)
+    
+    header_idx = None
+    if titulo_idx is not None:
+        for i in range(titulo_idx + 1, min(titulo_idx + 20, len(df_ind))):
+            row_str = " ".join(map(str, df_ind.iloc[i].values)).upper()
+            if "DEPARTAMENTO" in row_str and ("2019" in row_str or "2018" in row_str or "2015" in row_str):
+                header_idx = i
+                break
+                
+    if header_idx is None:
+        st.error("No se pudo encontrar la fila de encabezados en el Excel de Industria.")
+        st.stop()
+
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_ind.iloc[header_idx])]
     year_pos = extraer_anios(headers)
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
@@ -151,9 +167,19 @@ def cargar_datos():
     industria[NOMBRE_COL] = industria["raw_name"].apply(normalizar_nombre_depto)
     industria = industria[[NOMBRE_COL, "industrializacion_constante"]].drop_duplicates(NOMBRE_COL)
 
-    # PIB
+    # --- 3. PIB PER CÁPITA ---
     df_pib = leer_excel_drive(ID_PIB_PC, sheet_name="Cuadro 3", header=None)
-    header_idx = buscar_header(df_pib, "DEPARTAMENTO")
+    header_idx = None
+    for i in range(min(30, len(df_pib))):
+        row_str = " ".join(map(str, df_pib.iloc[i].values)).upper()
+        if "DEPARTAMENTO" in row_str and ("2019" in row_str or "2018" in row_str or "2015" in row_str):
+            header_idx = i
+            break
+            
+    if header_idx is None:
+        st.error("No se pudo encontrar la fila de encabezados en el Excel de PIB.")
+        st.stop()
+
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_pib.iloc[header_idx])]
     year_pos = extraer_anios(headers)
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
@@ -166,9 +192,19 @@ def cargar_datos():
     pib_pc[NOMBRE_COL] = pib_pc["raw_name"].apply(normalizar_nombre_depto)
     pib_pc = pib_pc[[NOMBRE_COL, "pib_percapita"]].drop_duplicates(NOMBRE_COL)
 
-    # Educación
+    # --- 4. EDUCACIÓN ---
     df_edu = leer_excel_drive(ID_EDUCACION, sheet_name="TCB_Depto Censo 2018", header=None)
-    header_idx = buscar_header(df_edu, "DEPARTAMENTO")
+    header_idx = None
+    for i in range(min(30, len(df_edu))):
+        row_str = " ".join(map(str, df_edu.iloc[i].values)).upper()
+        if "DEPARTAMENTO" in row_str and ("2019" in row_str or "2018" in row_str or "2015" in row_str):
+            header_idx = i
+            break
+            
+    if header_idx is None:
+        st.error("No se pudo encontrar la fila de encabezados en el Excel de Educación.")
+        st.stop()
+
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_edu.iloc[header_idx])]
     year_pos = extraer_anios(headers)
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
@@ -182,32 +218,50 @@ def cargar_datos():
     educacion[NOMBRE_COL] = educacion["raw_name"].apply(normalizar_nombre_depto)
     educacion = educacion[[NOMBRE_COL, "educacion_superior"]].drop_duplicates(NOMBRE_COL)
 
-    # Gini
+    # --- 5. GINI (Lógica de Colab restaurada) ---
     path_gini = descargar_de_drive(ID_GINI, extension="json")
-    with open(path_gini, 'r', encoding='utf-8') as f: data = json.load(f)
+    with open(path_gini, 'r', encoding='utf-8') as f: 
+        data = json.load(f)
     df_gini = pd.DataFrame([feat["attributes"] for feat in data.get("features", [])])
+    
+    # Extracción exacta de columnas como en Colab
     code_col = next((c for c in df_gini.columns if "CCDGO" in c.upper() or "COD" in c.upper()), None)
-    val_col = sorted([c for c in df_gini.columns if "GINI" in c.upper()])[-1]
+    gini_cols = sorted([c for c in df_gini.columns if "GINI" in c.upper()])
+    if not code_col or not gini_cols:
+        st.error("Error en el JSON de Gini: No se encontraron las columnas de código o de Gini.")
+        st.stop()
+        
+    val_col = gini_cols[-1]
     gini = df_gini[[code_col, val_col]].copy()
     gini.columns = [COD_DANE_COL, "gini"]
     gini[COD_DANE_COL] = clean_cod_dane(gini[COD_DANE_COL])
     gini["gini"] = pd.to_numeric(gini["gini"], errors="coerce")
     gini = gini.dropna().drop_duplicates(COD_DANE_COL)
 
-    # Población
-    resp_count = consultar_arcgis(URL_POBLACION, {"where": "1=1", "returnCountOnly": "true", "f": "json"})
-    total_mpios = resp_count.get("count", 0)
+    # --- 6. POBLACIÓN (Esri - Lógica de Colab restaurada) ---
+    total_mpios = consultar_arcgis(URL_POBLACION, {"where": "1=1", "returnCountOnly": "true", "f": "json"})["count"]
     atributos_pob = []
     for offset in range(0, total_mpios, 250):
-        params = {"where": "1=1", "outFields": "DPTO_CNMBR,TotalPob", "returnGeometry": "false", "resultOffset": offset, "resultRecordCount": 250, "f": "json"}
+        params = {
+            "where": "1=1", 
+            "outFields": "DPTO_CNMBR,TotalPob", 
+            "returnGeometry": "false", 
+            "resultOffset": offset, 
+            "resultRecordCount": 250, 
+            "f": "json"
+        }
         feats = consultar_arcgis(URL_POBLACION, params).get("features", [])
         atributos_pob.extend([f["attributes"] for f in feats])
+        
     df_pob = pd.DataFrame(atributos_pob)
     df_pob["TotalPob"] = pd.to_numeric(df_pob["TotalPob"], errors="coerce")
-    poblacion = df_pob.groupby("DPTO_CNMBR", as_index=False)["TotalPob"].sum().rename(columns={"DPTO_CNMBR": NOMBRE_COL, "TotalPob": "poblacion"})
+    poblacion = (
+        df_pob.groupby("DPTO_CNMBR", as_index=False)["TotalPob"].sum()
+        .rename(columns={"DPTO_CNMBR": NOMBRE_COL, "TotalPob": "poblacion"})
+    )
     poblacion[NOMBRE_COL] = poblacion[NOMBRE_COL].apply(normalizar_nombre_depto)
 
-    # Fusión
+    # --- 7. FUSIÓN ---
     gdf = gdf_geo.merge(gini, on=COD_DANE_COL, how="left")
     gdf = gdf.merge(industria, on=NOMBRE_COL, how="left")
     gdf = gdf.merge(educacion, on=NOMBRE_COL, how="left")
@@ -215,6 +269,7 @@ def cargar_datos():
     gdf = gdf.merge(poblacion, on=NOMBRE_COL, how="left")
     gdf = gdf.to_crs(epsg=3116).sort_values(COD_DANE_COL).reset_index(drop=True)
 
+    # --- 8. IMPUTACIÓN Y LOGS ---
     for col in ["gini", "industrializacion_constante", "educacion_superior", "pib_percapita"]:
         if gdf[col].notna().sum() >= 8:
             gdf[col] = gdf[col].fillna(gdf[col].median())
@@ -222,6 +277,7 @@ def cargar_datos():
     gdf["log_industria"] = np.log(gdf["industrializacion_constante"].clip(lower=1e-6))
     gdf["log_pib_percapita"] = np.log(gdf["pib_percapita"].clip(lower=1e-6))
     gdf["log_poblacion"] = np.log(gdf["poblacion"].clip(lower=1e-6))
+
     return gdf
 
 # ==========================================
