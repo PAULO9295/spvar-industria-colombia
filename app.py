@@ -110,7 +110,7 @@ def leer_excel_drive(file_id, sheet_name, header=None):
 # ==========================================
 @st.cache_data(show_spinner="Cargando datos y construyendo variables...")
 def cargar_datos():
-    # Geometría (CORREGIDO)
+    # --- 1. GEOMETRÍA ---
     gdf_geo = gpd.read_file(URL_GEOMETRIA)
     rename = {}
     for c in gdf_geo.columns:
@@ -125,41 +125,42 @@ def cargar_datos():
     gdf_geo[NOMBRE_COL] = gdf_geo[NOMBRE_COL].apply(normalizar_nombre_depto)
     gdf_geo = gdf_geo[[COD_DANE_COL, NOMBRE_COL, "geometry"]]
 
-    # Función auxiliar para encontrar años en los encabezados de forma segura
+    # --- FUNCIONES AUXILIARES SEGURAS ---
+    def buscar_header(df, keyword="DEPARTAMENTO"):
+        for i in range(min(40, len(df))):
+            row_values = df.iloc[i].values
+            row_str = " ".join(map(str, row_values)).upper()
+            # Exigimos que tenga la palabra Y que la fila tenga al menos 3 datos llenos
+            if keyword in row_str and sum(pd.notna(val) for val in row_values) >= 3:
+                return i
+        return None
+
     def extraer_anios(headers):
         year_pos = {}
         for j, c in enumerate(headers):
-            if j > 1:
-                # Extrae solo los dígitos del encabezado (ej. "2019 (p)" -> "2019")
+            if j > 0:
                 digits = ''.join(filter(str.isdigit, str(c)))
                 if len(digits) >= 4:
                     anio = int(digits[:4])
-                    if 1990 <= anio <= 2030: # Validación de sentido común
+                    if 1990 <= anio <= 2030:
                         year_pos[anio] = j
         return year_pos
 
-    # Industria (CORREGIDO)
+    # --- 2. INDUSTRIA ---
     df_ind = leer_excel_drive(ID_INDUSTRIA, sheet_name="Cuadro 2", header=None)
-    titulo_idx = next((i for i in range(len(df_ind)) if "Industrias manufactureras" in str(df_ind.iloc[i, 0])), None)
+    header_idx = buscar_header(df_ind, "DEPARTAMENTO")
     
-    header_idx = None
-    if titulo_idx is not None:
-        for i in range(titulo_idx + 1, min(titulo_idx + 30, len(df_ind))):
-            row_str = " ".join(map(str, df_ind.iloc[i].values)).upper()
-            if "DEPARTAMENTO" in row_str:
-                header_idx = i
-                break
-                
     if header_idx is None:
-        st.error("No se pudo encontrar la fila de encabezados en el Excel de Industria.")
+        st.error("No se encontró el encabezado real en Industria.")
+        st.write(df_ind.head(20))
         st.stop()
 
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_ind.iloc[header_idx])]
     year_pos = extraer_anios(headers)
     
     if not year_pos:
-        st.error("No se encontraron años en los encabezados de Industria.")
-        st.write(headers)
+        st.error("No se encontraron años en Industria.")
+        st.write("Encabezados detectados:", headers)
         st.stop()
         
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
@@ -172,25 +173,21 @@ def cargar_datos():
     industria[NOMBRE_COL] = industria["raw_name"].apply(normalizar_nombre_depto)
     industria = industria[[NOMBRE_COL, "industrializacion_constante"]].drop_duplicates(NOMBRE_COL)
 
-    # PIB pc (CORREGIDO)
+    # --- 3. PIB PER CÁPITA ---
     df_pib = leer_excel_drive(ID_PIB_PC, sheet_name="Cuadro 3", header=None)
-    header_idx = None
-    for i in range(min(30, len(df_pib))):
-        row_str = " ".join(map(str, df_pib.iloc[i].values)).upper()
-        if "DEPARTAMENTO" in row_str:
-            header_idx = i
-            break
-            
+    header_idx = buscar_header(df_pib, "DEPARTAMENTO")
+    
     if header_idx is None:
-        st.error("No se pudo encontrar la fila de encabezados en el Excel de PIB.")
+        st.error("No se encontró el encabezado real en PIB.")
+        st.write(df_pib.head(20))
         st.stop()
 
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_pib.iloc[header_idx])]
     year_pos = extraer_anios(headers)
     
     if not year_pos:
-        st.error("No se encontraron años en los encabezados de PIB.")
-        st.write(headers)
+        st.error("No se encontraron años en PIB.")
+        st.write("Encabezados detectados:", headers)
         st.stop()
         
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
@@ -203,25 +200,21 @@ def cargar_datos():
     pib_pc[NOMBRE_COL] = pib_pc["raw_name"].apply(normalizar_nombre_depto)
     pib_pc = pib_pc[[NOMBRE_COL, "pib_percapita"]].drop_duplicates(NOMBRE_COL)
 
-    # Educación (CORREGIDO)
+    # --- 4. EDUCACIÓN ---
     df_edu = leer_excel_drive(ID_EDUCACION, sheet_name="TCB_Depto Censo 2018", header=None)
-    header_idx = None
-    for i in range(min(30, len(df_edu))):
-        row_str = " ".join(map(str, df_edu.iloc[i].values)).upper()
-        if "DEPARTAMENTO" in row_str:
-            header_idx = i
-            break
-            
+    header_idx = buscar_header(df_edu, "DEPARTAMENTO")
+    
     if header_idx is None:
-        st.error("No se pudo encontrar la fila de encabezados en el Excel de Educación.")
+        st.error("No se encontró el encabezado real en Educación.")
+        st.write(df_edu.head(20))
         st.stop()
 
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_edu.iloc[header_idx])]
     year_pos = extraer_anios(headers)
     
     if not year_pos:
-        st.error("No se encontraron años en los encabezados de Educación.")
-        st.write(headers)
+        st.error("No se encontraron años en Educación.")
+        st.write("Encabezados detectados:", headers)
         st.stop()
 
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
@@ -235,7 +228,7 @@ def cargar_datos():
     educacion[NOMBRE_COL] = educacion["raw_name"].apply(normalizar_nombre_depto)
     educacion = educacion[[NOMBRE_COL, "educacion_superior"]].drop_duplicates(NOMBRE_COL)
 
-    # Gini (Blindado contra errores de columnas)
+    # --- 5. GINI ---
     path_gini = descargar_de_drive(ID_GINI, extension="json")
     with open(path_gini, 'r', encoding='utf-8') as f: data = json.load(f)
     df_gini = pd.DataFrame([feat["attributes"] for feat in data.get("features", [])])
@@ -245,7 +238,6 @@ def cargar_datos():
     
     if not code_col or not gini_cols:
         st.error("Error en el JSON de Gini: No se encontraron las columnas de código o de Gini.")
-        st.write(df_gini.columns.tolist())
         st.stop()
         
     val_col = gini_cols[-1]
@@ -255,11 +247,10 @@ def cargar_datos():
     gini["gini"] = pd.to_numeric(gini["gini"], errors="coerce")
     gini = gini.dropna().drop_duplicates(COD_DANE_COL)
 
-    # Población (Esri)
+    # --- 6. POBLACIÓN (ESRI) ---
     resp_count = consultar_arcgis(URL_POBLACION, {"where": "1=1", "returnCountOnly": "true", "f": "json"})
     if "count" not in resp_count:
         st.error("Error al conectar con la API de población de ESRI.")
-        st.write(resp_count)
         st.stop()
         
     total_mpios = resp_count["count"]
@@ -273,7 +264,7 @@ def cargar_datos():
     poblacion = df_pob.groupby("DPTO_CNMBR", as_index=False)["TotalPob"].sum().rename(columns={"DPTO_CNMBR": NOMBRE_COL, "TotalPob": "poblacion"})
     poblacion[NOMBRE_COL] = poblacion[NOMBRE_COL].apply(normalizar_nombre_depto)
 
-    # Fusión
+    # --- 7. FUSIÓN ---
     gdf = gdf_geo.merge(gini, on=COD_DANE_COL, how="left")
     gdf = gdf.merge(industria, on=NOMBRE_COL, how="left")
     gdf = gdf.merge(educacion, on=NOMBRE_COL, how="left")
@@ -281,7 +272,6 @@ def cargar_datos():
     gdf = gdf.merge(poblacion, on=NOMBRE_COL, how="left")
     gdf = gdf.to_crs(epsg=3116).sort_values(COD_DANE_COL).reset_index(drop=True)
 
-    # Imputación y Logs
     for col in ["gini", "industrializacion_constante", "educacion_superior", "pib_percapita"]:
         if gdf[col].notna().sum() >= 8:
             gdf[col] = gdf[col].fillna(gdf[col].median())
