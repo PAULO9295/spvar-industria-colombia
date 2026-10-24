@@ -133,7 +133,20 @@ def cargar_datos():
     # Industria
     df_ind = leer_excel_drive(ID_INDUSTRIA, sheet_name="Cuadro 2", header=None)
     titulo_idx = next(i for i in range(len(df_ind)) if "Industrias manufactureras" in str(df_ind.iloc[i, 0]))
-    header_idx = next(i for i in range(titulo_idx+1, titulo_idx+15) if "DEPARTAMENTOS" in " ".join(df_ind.iloc[i].astype(str).str.upper()))
+    
+    # Buscamos el encabezado en un rango más amplio y aceptamos "DEPARTAMENTO"
+    header_idx = None
+    for i in range(titulo_idx + 1, min(titulo_idx + 30, len(df_ind))):
+        row_str = " ".join(df_ind.iloc[i].astype(str).str.upper())
+        if "DEPARTAMENTO" in row_str:
+            header_idx = i
+            break
+            
+    # Si aún así no lo encuentra, mostramos un error claro y detenemos la app
+    if header_idx is None:
+        st.error("No se pudo encontrar la fila de encabezados en el Excel de Industria. Revisa estas filas:")
+        st.write(df_ind.iloc[titulo_idx:titulo_idx+30])
+        st.stop()
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_ind.iloc[header_idx])]
     year_pos = {int(float(str(c).replace("p","").replace("r","").replace(".0","").strip())): j for j, c in enumerate(headers) if j > 1 and str(c).replace("p","").replace("r","").replace(".0","").strip().isdigit()}
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
