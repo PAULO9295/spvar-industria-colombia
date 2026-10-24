@@ -103,6 +103,8 @@ def leer_excel_drive(file_id, sheet_name, header=None):
 # ==========================================
 @st.cache_data(show_spinner="Cargando datos y construyendo variables...")
 def cargar_datos():
+    import re # Importamos re para buscar años de forma segura
+
     # --- 1. GEOMETRÍA ---
     gdf_geo = gpd.read_file(URL_GEOMETRIA)
     rename = {}
@@ -118,28 +120,20 @@ def cargar_datos():
     gdf_geo[NOMBRE_COL] = gdf_geo[NOMBRE_COL].apply(normalizar_nombre_depto)
     gdf_geo = gdf_geo[[COD_DANE_COL, NOMBRE_COL, "geometry"]]
 
-    # --- FUNCIONES AUXILIARES SEGURAS ---
-    def buscar_header(df, keyword="DEPARTAMENTO"):
-        for i in range(min(40, len(df))):
-            row_values = df.iloc[i].values
-            row_str = " ".join(map(str, row_values)).upper()
-            # Exigimos que tenga la palabra Y que la fila tenga al menos 3 datos llenos
-            if keyword in row_str and sum(pd.notna(val) for val in row_values) >= 3:
-                return i
-        return None
-
+    # --- FUNCIÓN AUXILIAR CORREGIDA ---
     def extraer_anios(headers):
         year_pos = {}
         for j, c in enumerate(headers):
             if j > 0:
-                digits = ''.join(filter(str.isdigit, str(c)))
-                if len(digits) >= 4:
-                    anio = int(digits[:4])
+                # Busca cualquier número de 4 dígitos que empiece con 19 o 20 (ej. "2019", "2019 (p)", "Año 2019")
+                match = re.search(r'(19|20)\d{2}', str(c))
+                if match:
+                    anio = int(match.group(0))
                     if 1990 <= anio <= 2030:
                         year_pos[anio] = j
         return year_pos
 
-    # --- 2. INDUSTRIA (Lógica de Colab restaurada) ---
+    # --- 2. INDUSTRIA ---
     df_ind = leer_excel_drive(ID_INDUSTRIA, sheet_name="Cuadro 2", header=None)
     titulo_idx = next((i for i in range(len(df_ind)) if "Industrias manufactureras" in str(df_ind.iloc[i, 0])), None)
     
@@ -157,6 +151,12 @@ def cargar_datos():
 
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_ind.iloc[header_idx])]
     year_pos = extraer_anios(headers)
+    
+    if not year_pos:
+        st.error("No se encontraron años en los encabezados de Industria.")
+        st.write(headers)
+        st.stop()
+
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
     df_ind_clean = df_ind.iloc[header_idx+1:header_idx+40].copy()
     df_ind_clean.columns = headers
@@ -182,6 +182,12 @@ def cargar_datos():
 
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_pib.iloc[header_idx])]
     year_pos = extraer_anios(headers)
+    
+    if not year_pos:
+        st.error("No se encontraron años en los encabezados de PIB.")
+        st.write(headers)
+        st.stop()
+
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
     df_pib_clean = df_pib.iloc[header_idx+1:].copy()
     df_pib_clean.columns = headers
@@ -207,6 +213,12 @@ def cargar_datos():
 
     headers = [str(h).strip() if pd.notna(h) else f"c{j}" for j, h in enumerate(df_edu.iloc[header_idx])]
     year_pos = extraer_anios(headers)
+    
+    if not year_pos:
+        st.error("No se encontraron años en los encabezados de Educación.")
+        st.write(headers)
+        st.stop()
+
     anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
     df_edu_clean = df_edu.iloc[header_idx+1:].copy()
     df_edu_clean.columns = headers
@@ -218,13 +230,12 @@ def cargar_datos():
     educacion[NOMBRE_COL] = educacion["raw_name"].apply(normalizar_nombre_depto)
     educacion = educacion[[NOMBRE_COL, "educacion_superior"]].drop_duplicates(NOMBRE_COL)
 
-    # --- 5. GINI (Lógica de Colab restaurada) ---
+    # --- 5. GINI ---
     path_gini = descargar_de_drive(ID_GINI, extension="json")
     with open(path_gini, 'r', encoding='utf-8') as f: 
         data = json.load(f)
     df_gini = pd.DataFrame([feat["attributes"] for feat in data.get("features", [])])
     
-    # Extracción exacta de columnas como en Colab
     code_col = next((c for c in df_gini.columns if "CCDGO" in c.upper() or "COD" in c.upper()), None)
     gini_cols = sorted([c for c in df_gini.columns if "GINI" in c.upper()])
     if not code_col or not gini_cols:
@@ -238,7 +249,7 @@ def cargar_datos():
     gini["gini"] = pd.to_numeric(gini["gini"], errors="coerce")
     gini = gini.dropna().drop_duplicates(COD_DANE_COL)
 
-    # --- 6. POBLACIÓN (Esri - Lógica de Colab restaurada) ---
+    # --- 6. POBLACIÓN (Esri) ---
     total_mpios = consultar_arcgis(URL_POBLACION, {"where": "1=1", "returnCountOnly": "true", "f": "json"})["count"]
     atributos_pob = []
     for offset in range(0, total_mpios, 250):
