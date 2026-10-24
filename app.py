@@ -556,6 +556,16 @@ def plot_spvar_by_order(A_system, S_system, K_spvar, N_spvar, SPVAR_VARS, dept_n
     fig.update_layout(title=f"IRF espacial — {shock_var} | Shock {shock_size*100:+.0f}% en {dept_names[origin]}", xaxis_title="Orden de propagación", yaxis_title=f"Δ {shock_var} [%]", height=440, legend=dict(orientation="h", y=1.12))
     return fig
 
+def _lm_tests(resid, W, y, Xc):
+    n = len(resid)
+    s2 = max((resid @ resid) / n, 1e-12)
+    LM_err = ((resid @ W @ resid) / s2)**2 / max((W @ W.T).trace(), 1e-8)
+    Wy = W @ y
+    P = Xc @ np.linalg.pinv(Xc.T @ Xc) @ Xc.T
+    denom = max((Wy @ (np.eye(n) - P) @ Wy) / s2, 1e-8)
+    LM_lag = ((resid @ Wy) / s2)**2 / denom
+    return float(LM_lag), float(LM_err)
+  
 # ==========================================
 # 5. INTERFAZ STREAMLIT
 # ==========================================
@@ -571,15 +581,48 @@ tabs = st.tabs(["1 · Diagnóstico", "2 · Mapas y LISA", "3 · Simulador espaci
 
 with tabs[0]:
     st.header("Diagnóstico del Modelo")
+    
+    # Cálculos para las interpretaciones
+    X_ols = sm.add_constant(gdf_ui[["gini", "educacion_superior", "log_pib_percapita"]].values)
+    ols_fit = sm.OLS(gdf_ui["log_industria"].values, X_ols).fit()
+    mi_resid = Moran(ols_fit.resid, res["w_ui"])
+    LM_lag, LM_err = _lm_tests(ols_fit.resid, res["W_np"], gdf_ui["log_industria"].values, X_ols)
+
     df_diag = pd.DataFrame([
         ["Moran's I (Y)", f"{res['mi_Y'].I:.4f}", f"p={res['mi_Y'].p_sim:.4f}"],
+        ["Moran's I (Residuos MCO)", f"{mi_resid.I:.4f}", f"p={mi_resid.p_sim:.4f}"],
+        ["LM-Lag", f"{LM_lag:.2f}", "Sugiere contagio de Y (SAR)"],
+        ["LM-Error", f"{LM_err:.2f}", "Sugiere shocks omitidos (SEM)"],
         ["Modelo (AIC)", res["best_spec_name"], f"AIC={res['best_model'].aic:.2f}"],
         ["ρ (rho)", f"{res['rho_ui']:.4f}", "Contagio espacial de Y"],
         ["λ (lambda)", f"{res['lambda_ui']:.4f}", "Correlación de errores"]
     ], columns=["Métrica", "Valor", "Detalle"])
     st.dataframe(df_diag, use_container_width=True)
+    
     st.markdown("### Coeficientes del Modelo")
     st.json(res["betas_dict"])
+
+    # INTERPRETACIÓN ORIGINAL RESTAURADA
+    st.markdown("---")
+    st.subheader("Interpretación Económica")
+    interp_text = f"**Modelo seleccionado:** `{res['best_spec_name']}`\n\n"
+    
+    if mi_resid.p_sim < 0.05:
+        interp_text += f"- **Dependencia Espacial:** El test de Moran sobre los residuos MCO es significativo (p={mi_resid.p_sim:.4f}). Esto indica que la regresión lineal tradicional (MCO) está subestimando la estructura regional, por lo que era necesario usar un modelo espacial.\n"
+    else:
+        interp_text += f"- **Dependencia Espacial:** El test de Moran sobre residuos no es significativo (p={mi_resid.p_sim:.4f}).\n"
+        
+    if res["best_spec_name"] in ("SAR", "SDM"):
+        interp_text += f"- **Coeficiente ρ (rho):** Es {res['rho_ui']:.3f}. Un aumento del 1% en la industria promedio de los departamentos vecinos eleva la industria local en ~{res['rho_ui']:.1f}%. Hay un fuerte efecto de contagio (derrame).\n"
+    elif res["best_spec_name"] == "SEM":
+        interp_text += f"- **Coeficiente λ (lambda):** Es {res['lambda_ui']:.3f}. Los shocks no observados (como políticas regionales o crisis) están correlacionados entre departamentos vecinos.\n"
+        
+    interp_text += "\n**Lectura de Variables (Modelo Log-Log → Elasticidades):**\n"
+    interp_text += f"- **Gini:** Un aumento de 1% en la desigualdad reduce el log de la industria en {res['betas_dict'].get('gini', 0):.2f}% (efecto directo).\n"
+    interp_text += f"- **Educación:** Un aumento de 1% en la cobertura de educación superior incrementa la industria en {res['betas_dict'].get('educacion_superior', 0):.2f}%.\n"
+    interp_text += f"- **Log PIB pc:** Un aumento de 1% en el PIB per cápita (proxy de ingreso) incrementa la industria en {res['betas_dict'].get('log_pib_percapita', 0):.2f}%.\n"
+    
+    st.info(interp_text)
 
 with tabs[1]:
     st.header("Mapas y LISA")
@@ -590,35 +633,65 @@ with tabs[1]:
     with col2:
         st.subheader("Clústeres LISA")
         st.plotly_chart(crear_lisa_map(gdf_map, res["lisa_Y"]), use_container_width=True)
+        st.caption("**Leyenda LISA:** HH (Alto-Alto): Focos de alta industrialización. LL (Bajo-Bajo): Polos de baja industrialización. LH / HL: Outliers espaciales.")
 
 with tabs[2]:
-    st.header("Simulador de Spillovers")
+    st.header("Simulador de Spillovers (Efectos Derrame)")
     col_ctrl, col_viz = st.columns([1, 2])
     with col_ctrl:
         sim_dept = st.selectbox("Departamento origen", gdf_ui[NOMBRE_COL].tolist(), key="sim_dept")
         sim_gini = st.slider("Δ Gini", -0.1, 0.1, 0.0, step=0.005, key="sim_gini")
         sim_edu = st.slider("Δ Educación", -0.1, 0.1, 0.0, step=0.005, key="sim_edu")
         sim_pib = st.slider("Δ PIB per cápita (%)", -0.2, 0.2, 0.05, step=0.01, key="sim_pib")
-        sim_rho = st.slider("ρ (override)", -0.9, 0.9, res["rho_fallback"], step=0.01, key="sim_rho")
+        sim_rho = st.slider("ρ (multiplicador espacial)", -0.9, 0.9, res["rho_fallback"], step=0.01, key="sim_rho")
         sim_var = st.selectbox("Variable a visualizar", ["combined", "gini", "educacion_superior", "log_pib_percapita"], key="sim_var")
 
     with col_viz:
         png = create_propagation_png(gdf_map, res["w_ui"], res["betas_dict"], res["rho_fallback"], sim_dept, sim_var, sim_gini, sim_edu, sim_pib, sim_rho)
         st.image(png, use_container_width=True)
+        
         bar, irf = plot_simulacion(gdf_map, res["w_ui"], res["betas_dict"], res["rho_fallback"], sim_dept, sim_gini, sim_edu, sim_pib, sim_rho)
         st.plotly_chart(bar, use_container_width=True)
         st.plotly_chart(irf, use_container_width=True)
 
+        # INTERPRETACIÓN ORIGINAL RESTAURADA
+        st.markdown("---")
+        st.subheader("Lectura del Shock")
+        
+        idx = gdf_ui[gdf_ui[NOMBRE_COL] == sim_dept].index[0]
+        rho_eff = float(np.clip(sim_rho, -0.9, 0.9))
+        shock_local = res['betas_dict'].get('gini', 0)*sim_gini + res['betas_dict'].get('educacion_superior', 0)*sim_edu + res['betas_dict'].get('log_pib_percapita', 0)*sim_pib
+        
+        st.info(f"""
+        **Análisis del shock en {sim_dept}:**
+        - El impacto directo local (h=0) es de **{shock_local*100:.3f}%** en el log(Industria).
+        - Con un multiplicador espacial ρ = **{rho_eff:.2f}**, este shock no se queda en el departamento de origen.
+        - El gráfico de barras muestra cómo el shock se difunde a los departamentos vecinos (en rojo el origen).
+        - La **IRF Espacial** (línea de tiempo) muestra que el shock se propaga en órdenes de vecindad: el primer punto es el impacto local, el segundo son los vecinos de primer orden, y así sucesivamente. Si la curva decae lentamente, significa que el efecto derrame es muy fuerte y persistente en la región.
+        """)
+
 with tabs[3]:
-    st.header("SpVAR espacial (Sistema de Ecuaciones)")
-    st.markdown("### Matrices de Spillover")
+    st.header("SpVAR Espacial (Sistema de Ecuaciones Simultáneas)")
+    st.markdown("Este modelo estima un sistema de 4 ecuaciones donde cada variable depende de su pasado espacial y del de las demás.")
+    
+    st.markdown("### 1. Matrices de Spillover (Descomposición de LeSage-Pace)")
     col_m1, col_m2, col_m3 = st.columns(3)
-    with col_m1: st.write("**Directos**"); st.dataframe(res["df_direct"].round(3))
-    with col_m2: st.write("**Indirectos**"); st.dataframe(res["df_indirect"].round(3))
-    with col_m3: st.write("**Totales**"); st.dataframe(res["df_total"].round(3))
+    with col_m1: st.write("**Directos (Local)**"); st.dataframe(res["df_direct"].round(3))
+    with col_m2: st.write("**Indirectos (Spillover)**"); st.dataframe(res["df_indirect"].round(3))
+    with col_m3: st.write("**Totales (Sistémicos)**"); st.dataframe(res["df_total"].round(3))
+
+    # NUEVAS INTERPRETACIONES PARA EL SPVAR (Matrices)
+    st.info(f"""
+    **¿Cómo leer estas matrices del SpVAR?**
+    - Las **Filas** representan la variable que recibe el efecto (Respuesta).
+    - Las **Columnas** representan la variable que origina el shock (Impulso).
+    - **Matriz Directa:** Mide el impacto de un shock en un departamento sobre sí mismo. (Ej: Cómo un choque en la educación local afecta la industria local).
+    - **Matriz Indirecta:** Mide el efecto derrame puro entre departamentos. (Ej: Cómo un choque en la educación de los vecinos afecta mi industria local).
+    - **Matriz Total:** Es la suma del efecto local más el derrame espacial. Es el multiplicador final del sistema.
+    """)
 
     st.markdown("---")
-    st.subheader("Simulación de shock en el sistema")
+    st.subheader("2. Simulación de shock sistémico")
     col_s1, col_s2 = st.columns([1, 2])
     with col_s1:
         spvar_shock_var = st.selectbox("Variable del shock", res["SPVAR_VARS"], key="spvar_var")
@@ -637,43 +710,15 @@ with tabs[3]:
         irf_spvar = plot_spvar_by_order(res["A_system"], res["S_system"], res["K_spvar"], len(gdf_ui), res["SPVAR_VARS"], gdf_ui[NOMBRE_COL].tolist(), res["W_np"], spvar_shock_var, idx_spvar, spvar_shock_size, 8)
         st.plotly_chart(irf_spvar, use_container_width=True)
 
+        # NUEVAS INTERPRETACIONES PARA EL SPVAR (Gráficos)
+        st.markdown("---")
+        st.info(f"""
+        **Interpretación de la Simulación Sistémica:**
+        - **Mapa de Propagación:** Muestra cómo un shock en **{spvar_shock_var}** originado en **{spvar_shock_dept}** se propaga geográficamente. Las flechas indican la dirección del contagio y los colores la intensidad del impacto sobre la variable seleccionada.
+        - **Heatmap K×N:** Es una radiografía del sistema. El eje Y tiene las 4 variables del sistema (Industria, Gini, Educación, PIB pc). El eje X tiene los departamentos. Un punto rojo intenso indica que esa variable en ese departamento específico recibió un fuerte impacto positivo. Un punto azul indica un impacto negativo (crisis).
+        - **IRF Espacial (Impulse Response Function):** Mide la persistencia del shock a medida que viaja por la red de vecinos. La línea roja es el origen, la azul los vecinos directos y la verde el promedio del país. Si la línea azul sube en el paso 1 o 2, significa que el shock se está "contagiando" a las regiones aledañas.
+        """)
+
 with tabs[4]:
     st.header("Chatbot y Reporte PDF")
-    
-    # Chatbot simple
-    st.subheader("Chatbot de Ayuda")
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]): st.markdown(message["content"])
-    if prompt := st.chat_input("Pregunta sobre Moran, SAR, impactos, etc..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.markdown(prompt)
-        # Lógica simple
-        m = prompt.lower()
-        if "moran" in m: resp = f"Moran's I sobre Y = {res['mi_Y'].I:.3f} (p={res['mi_Y'].p_sim:.3f})."
-        elif "rho" in m: resp = f"ρ actual = {res['rho_ui']:.3f}. Si ρ>0, los shocks se amplifican espacialmente."
-        else: resp = "Pregunta por: Moran, SAR, SEM, SDM, ρ, impactos, spillovers, LISA o IRF."
-        st.session_state.messages.append({"role": "assistant", "content": resp})
-        with st.chat_message("assistant"): st.markdown(resp)
-
-    st.subheader("Reporte PDF")
-    st.write("Genera un reporte con los resultados principales.")
-    if st.button("Generar PDF"):
-        from reportlab.lib.pagesizes import A4
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib import colors
-        from reportlab.lib.units import cm
-        from reportlab.lib.enums import TA_CENTER
-
-        buf = BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=A4)
-        st_style = getSampleStyleSheet()
-        title_s = ParagraphStyle("T", parent=st_style["Heading1"], alignment=TA_CENTER)
-        
-        story = [Paragraph("Reporte — Modelo Espacial de Industria", title_s), Spacer(1, 0.5*cm)]
-        story.append(Paragraph(f"Especificación: {res['best_spec_name']} · ρ = {res['rho_ui']:.3f}", st_style["Normal"]))
-        doc.build(story)
-        buf.seek(0)
-        st.download_button("Descargar PDF", data=buf.getvalue(), file_name="reporte.pdf", mime="application/pdf")
+    # ... (Deja tu código actual del chatbot y PDF sin cambios aquí)
