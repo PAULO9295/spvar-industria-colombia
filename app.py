@@ -118,6 +118,7 @@ def cargar_datos():
         if any(x in cl for x in ["dpto_ccdgo", "cod_dpto", "codigo", "cod", "id"]): rename[c] = COD_DANE_COL
         if any(x in cl for x in ["nombre", "name", "dpto_cnmbr", "nom", "departamento"]): rename[c] = NOMBRE_COL
     gdf_geo = gdf_geo.rename(columns=rename)
+    st.write("Columnas disponibles:", gdf_geo.columns.tolist())
     gdf_geo[COD_DANE_COL] = clean_cod_dane(gdf_geo[COD_DANE_COL])
     gdf_geo[NOMBRE_COL] = gdf_geo[NOMBRE_COL].apply(normalizar_nombre_depto)
     gdf_geo = gdf_geo[[COD_DANE_COL, NOMBRE_COL, "geometry"]]
