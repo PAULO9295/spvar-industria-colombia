@@ -1048,26 +1048,150 @@ with tabs[4]:
         st.session_state.messages.append({"role": "assistant", "content": resp})
         with st.chat_message("assistant"): 
             st.markdown(resp)
+    
     # --- REPORTE PDF ---
     st.markdown("---")
     st.subheader("Reporte PDF")
     st.write("Genera un documento formal con los resultados de la estimación principal.")
-    if st.button("Generar PDF"):
-        from io import BytesIO  # <--- ESTO SOLUCIONA EL ERROR
-        from reportlab.lib.pagesizes import A4
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib import colors
-        from reportlab.lib.units import cm
-        from reportlab.lib.enums import TA_CENTER
+      if st.button("Generar PDF"):
+        with st.spinner("Generando PDF y renderizando mapas (esto puede tardar unos segundos)..."):
+            from io import BytesIO
+            from reportlab.lib.pagesizes import A4
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib import colors
+            from reportlab.lib.units import cm
+            from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+            import matplotlib.pyplot as plt
 
-        buf = BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=A4)
-        st_style = getSampleStyleSheet()
-        title_s = ParagraphStyle("T", parent=st_style["Heading1"], alignment=TA_CENTER)
-        
-        story = [Paragraph("Reporte — Modelo Espacial de Industria", title_s), Spacer(1, 0.5*cm)]
-        story.append(Paragraph(f"Especificación: {res['best_spec_name']} · ρ = {res['rho_ui']:.3f}", st_style["Normal"]))
-        doc.build(story)
-        buf.seek(0)
-        st.download_button("⬇️ Descargar PDF", data=buf.getvalue(), file_name="reporte_econometria.pdf", mime="application/pdf")
+            buf = BytesIO()
+            doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5*cm, bottomMargin=1.5*cm, leftMargin=1.5*cm, rightMargin=1.5*cm)
+            st_style = getSampleStyleSheet()
+            
+            # Estilos personalizados
+            title_s = ParagraphStyle("T", parent=st_style["Heading1"], alignment=TA_CENTER, textColor=colors.HexColor("#1e3a5f"), spaceAfter=12)
+            h2_s = ParagraphStyle("H2", parent=st_style["Heading2"], textColor=colors.HexColor("#2d5a87"), spaceBefore=12, spaceAfter=6)
+            body_s = ParagraphStyle("B", parent=st_style["Normal"], alignment=TA_JUSTIFY, fontSize=10, leading=14, spaceAfter=6)
+            
+            story = []
+
+            # 1. TÍTULO
+            story.append(Paragraph("Reporte: Modelo Espacial de Industria Manufacturera", title_s))
+            story.append(Spacer(1, 0.5*cm))
+
+            # 2. RESUMEN EJECUTIVO
+            story.append(Paragraph("1. Resumen Ejecutivo y Metodología", h2_s))
+            resumen = (
+                f"Este documento presenta los resultados del modelo de dependencia espacial estimado para analizar el "
+                f"Nivel de Industria Manufacturera en los departamentos de Colombia. "
+                f"Se seleccionó automáticamente la matriz de vecinos <b>{res['best_w_name']}</b> y el modelo <b>{res['best_spec_name']}</b>, "
+                f"ya que presentaron el mejor ajuste estadístico (menor AIC). "
+                f"El Índice de Moran para la variable dependiente es de <b>{res['mi_Y'].I:.4f}</b> (p-valor = {res['mi_Y'].p_sim:.4f}), "
+                f"lo que confirma la existencia de autocorrelación espacial. "
+                f"El multiplicador de contagio espacial (ρ) es <b>{res['rho_ui']:.4f}</b>."
+            )
+            story.append(Paragraph(resumen, body_s))
+            story.append(Spacer(1, 0.5*cm))
+
+            # 3. TABLA DE COEFICIENTES (ELASTICIDADES)
+            story.append(Paragraph("2. Coeficientes del Modelo (Elasticidades)", h2_s))
+            story.append(Paragraph("Al usar un modelo log-log, los coeficientes representan el cambio porcentual en la industria ante un cambio del 1% en la variable explicativa.", body_s))
+            
+            coef_data = [["Variable", "Coeficiente (Elasticidad)"]]
+            for var, beta in res["betas_dict"].items():
+                if var != "const":
+                    coef_data.append([VAR_LABELS.get(var, var), f"{beta:.4f}"])
+            
+            t_coef = Table(coef_data, colWidths=[10*cm, 6*cm])
+            t_coef.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#2d5a87")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            story.append(t_coef)
+            story.append(Spacer(1, 1*cm))
+
+            # 4. MAPAS
+            story.append(Paragraph("3. Distribución Espacial (Mapas Coropléticos)", h2_s))
+            
+            # Función interna para generar mapas en el PDF
+            def crear_mapa_pdf(col, titulo):
+                fig, ax = plt.subplots(figsize=(6, 5))
+                gdf_ui.plot(column=col, ax=ax, cmap="YlOrRd", edgecolor="white", linewidth=0.5, legend=True, legend_kwds={'shrink': 0.6})
+                ax.set_title(titulo, fontsize=10, fontweight="bold")
+                ax.axis("off")
+                img_buf = BytesIO()
+                fig.savefig(img_buf, format="png", dpi=150, bbox_inches="tight")
+                plt.close(fig)
+                img_buf.seek(0)
+                return img_buf
+
+            map_vars = [
+                ("log_industria", "Nivel de Industria Manufacturera"),
+                ("gini", "Desigualdad (Índice Gini)"),
+                ("educacion_superior", "Cobertura en Educación Superior"),
+                ("log_pib_percapita", "Riqueza (PIB per cápita)")
+            ]
+
+            for var, titulo in map_vars:
+                buf_map = crear_mapa_pdf(var, titulo)
+                # Insertar imagen al 60% del ancho de la página (A4 es ~21cm)
+                story.append(Image(buf_map, width=11*cm, height=9*cm))
+                story.append(Spacer(1, 0.3*cm))
+
+            # 5. MATRICES DEL SPVAR
+            story.append(Paragraph("4. Matrices de Spillover (SpVAR Espacial)", h2_s))
+            story.append(Paragraph("Descomposición de LeSage-Pace para medir los efectos directos (locales) e indirectos (derrame a vecinos) del sistema de ecuaciones simultáneas.", body_s))
+            
+            # Crear una tabla resumen de la matriz total
+            spvar_vars = res["SPVAR_VARS"]
+            matrix_data = [["Variable (Respuesta)"] + [f"Impulso: {v}" for v in spvar_vars]]
+            
+            for i, row_name in enumerate(spvar_vars):
+                row = [f"Respuesta: {row_name}"]
+                for j in range(len(spvar_vars)):
+                    row.append(f"{res['df_total'].iloc[i, j]:.3f}")
+                matrix_data.append(row)
+
+            t_spvar = Table(matrix_data)
+            t_spvar.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#333333")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8), # Letra pequeña para que quepa
+                ('BACKGROUND', (0, 1), (-1, -1), colors.whitesmoke),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+            ]))
+            story.append(t_spvar)
+            story.append(Spacer(1, 0.5*cm))
+
+            # 6. NOTAS METODOLÓGICAS
+            story.append(Paragraph("5. Notas Metodológicas", h2_s))
+            notas = (
+                "• La variable dependiente es el logaritmo del Valor Agregado manufacturero a precios constantes (Base 2015).<br/>"
+                "• Los regresores incluyen Gini, Cobertura de Educación Superior y Log(PIB per cápita).<br/>"
+                "• Se utilizó la inversa de la matriz (I - ρW) para calcular los multiplicadores espaciales.<br/>"
+                "• El modelo SpVAR estima 4 ecuaciones simultáneas, donde cada variable depende de sus vecinos y de las otras variables del sistema.<br/>"
+                "• Un valor positivo en las flechas de simulación indica un efecto de derrame positivo (crecimiento conjunto), mientras que un valor negativo indica contracción."
+            )
+            story.append(Paragraph(notas, body_s))
+
+            # CONSTRUIR PDF
+            try:
+                doc.build(story)
+                buf.seek(0)
+                st.success("¡PDF generado con éxito!")
+                st.download_button(
+                    label="⬇️ Descargar Reporte PDF Completo", 
+                    data=buf.getvalue(), 
+                    file_name="Reporte_Modelo_Espacial_Industria.pdf", 
+                    mime="application/pdf"
+                )
+            except Exception as e:
+                st.error(f"Error al generar el PDF: {e}")
