@@ -1,0 +1,11 @@
+name: Keep Streamlit App Alive
+on:
+  schedule:
+    - cron: '0 */4 * * *'
+  workflow_dispatch: 
+jobs:
+  ping-app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Streamlit App
+        run: curl -s -o /dev/null -w "%{http_code}\n" https://spvar-industria-colombia-4m4ccsoc754ahkrfbvei7c.streamlit.app/
