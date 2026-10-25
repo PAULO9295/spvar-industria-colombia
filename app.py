@@ -502,11 +502,10 @@ def _compute_impacts_per_variable(gdf_map, w_ui, betas_dict, rho_fallback, dept_
 
 def create_propagation_png(gdf_map, w_ui, betas_dict, rho_fallback, dept_name, mode, dgini, dedu, dpib_pct, rho_override=None):
     _init_map_cache(gdf_map)
-    idx = gdf_map[gdf_map[NOMBRE_COL] == dept_name].index[0]
+    # Búsqueda robusta ignorando mayúsculas
+    idx = gdf_map[gdf_map[NOMBRE_COL].str.upper() == dept_name.upper()].index[0]
     impacts = _compute_impacts_per_variable(gdf_map, w_ui, betas_dict, rho_fallback, idx, dgini, dedu, dpib_pct, rho_override)
-    key = mode if mode in impacts else "combined"
-    impact_pct = impacts[key]
-    rho_eff = impacts["_rho"]
+    # ... el resto de la función queda igual ...
 
     # Limpiar NaNs o Inf por si acaso
     impact_pct = np.nan_to_num(impact_pct, nan=0.0, posinf=0.0, neginf=0.0)
@@ -558,7 +557,9 @@ def create_propagation_png(gdf_map, w_ui, betas_dict, rho_fallback, dept_name, m
     return buf.getvalue()
 
 def plot_simulacion(gdf_map, w_ui, betas_dict, rho_fallback, dept_name, dgini, dedu, dpib_pct, rho_override):
-    idx = gdf_map[gdf_map[NOMBRE_COL] == dept_name].index[0]
+    # Búsqueda robusta ignorando mayúsculas
+    idx = gdf_map[gdf_map[NOMBRE_COL].str.upper() == dept_name.upper()].index[0]
+    # ... el resto de la función queda igual ...
     rho_eff = float(np.clip(rho_override, -0.9, 0.9))
     A = rho_eff * w_ui.full()[0]
     try: S = np.linalg.inv(np.eye(len(gdf_map)) - A)
