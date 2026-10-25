@@ -711,7 +711,21 @@ with tabs[0]:
         df_betas = pd.DataFrame(list(res["betas_dict"].items()), columns=["Variable", "Coeficiente"])
         df_betas["Variable"] = df_betas["Variable"].map(lambda x: VAR_LABELS.get(x, x))
         st.dataframe(df_betas, use_container_width=True)
-
+  
+# INTERPRETACIÓN DE ELASTICIDADES (RESTAURADA)
+    st.markdown("---")
+    st.markdown("### 📊 Magnitud de los Efectos (Elasticidades)")
+    st.markdown("Como las variables están en logaritmos, los coeficientes se leen como **elasticidades**. En palabras simples: *Si la variable X cambia en 1%, la industria cambia en el porcentaje que indica el coeficiente.*")
+    
+    elasticidades_txt = ""
+    for var, beta in res["betas_dict"].items():
+        if var != "const":
+            nombre_amigable = VAR_LABELS.get(var, var)
+            direccion = "aumenta" if beta > 0 else "disminuye"
+            elasticidades_txt += f"- Un aumento del **1%** en la **{nombre_amigable}** {direccion} la industria local en un **{abs(beta):.2f}%**.\n"
+    
+    st.info(elasticidades_txt)
+  
 with tabs[1]:
     st.header("Mapas y Clústeres Espaciales")
     st.markdown("Explora visualmente cómo se distribuyen las variables en Colombia y dónde hay clústeres (grupos) significativos.")
