@@ -831,13 +831,20 @@ with tabs[1]:
 with tabs[2]:
     st.header("Simulador de Spillovers (Efectos Derrame)")
     st.markdown("""
-    **¿Qué es un Spillover?** Imagina que lanzas una piedra a un estanque. El impacto principal es donde cae la piedra (el departamento de origen), pero las ondas se expanden a los alrededores (los departamentos vecinos). Aquí puedes simular cómo un cambio en una variable afecta a todo el país.
+    **¿Qué es un Spillover?** Imagina que lanzas una piedra a un estanque. El impacto principal es donde cae la piedra (el departamento de origen), pero las ondas se expanden a los alrededores (los departamentos vecinos).
     """)
     
+    # --- NOTA DE ADVERTENCIA ---
+    st.warning("⚠️ **Nota técnica:** Por un problema de coincidencia de nombres geográficos, el departamento de **Bogotá D.C.** no se puede simular en esta pestaña específica. Si deseas ver el impacto en Bogotá, por favor ve a la **Pestaña 4 (SpVAR)** donde el simulador funciona perfectamente. ¡Disculpa las molestias!")
+
     col_ctrl, col_viz = st.columns([1, 2])
     with col_ctrl:
         st.markdown("### ⚙️ Configura tu simulación")
-        sim_dept = st.selectbox("Departamento origen (¿Dónde cae la piedra?)", dept_options, key="sim_dept", help="El departamento que recibirá el shock inicial.")
+        
+        # Filtramos Bogotá de las opciones para evitar el error
+        dept_options_safe = [d for d in dept_options if "Bogot" not in d]
+        
+        sim_dept = st.selectbox("Departamento origen (¿Dónde cae la piedra?)", dept_options_safe, key="sim_dept", help="El departamento que recibirá el shock inicial.")
         sim_gini = st.slider("Cambio en Desigualdad (Gini)", -0.1, 0.1, 0.0, step=0.005, key="sim_gini", help="Valor negativo = menor desigualdad. Positivo = mayor desigualdad.")
         sim_edu = st.slider("Cambio en Educación", -0.1, 0.1, 0.0, step=0.005, key="sim_edu", help="Aumenta o reduce la cobertura de educación superior (ej. 0.05 = +5%).")
         sim_pib = st.slider("Cambio en Riqueza (PIB pc %)", -0.2, 0.2, 0.05, step=0.01, key="sim_pib", help="Simula un crecimiento (positivo) o una recesión (negativo) económica.")
