@@ -402,7 +402,9 @@ def entrenar_modelos(_gdf):
         "betas_dict": betas_dict, "rho_ui": rho_ui, "lambda_ui": lambda_ui, "rho_fallback": rho_fallback,
         "mi_Y": mi_Y, "lisa_Y": lisa_Y, "SPVAR_VARS": SPVAR_VARS, "K_spvar": K_spvar,
         "spvar_eqs": spvar_eqs, "A_system": A_system, "S_system": S_system,
-        "df_direct": pd.DataFrame(direct_mat), "df_indirect": pd.DataFrame(indirect_mat), "df_total": pd.DataFrame(total_mat)
+        "df_direct": pd.DataFrame(direct_mat), "df_indirect": pd.DataFrame(indirect_mat), "df_total": pd.DataFrame(total_mat),
+        "best_w_name": best_w_name,  # <--- NUEVO
+        "df_w_rank": df_res          # <--- NUEVO
     }
 
 # ==========================================
@@ -731,6 +733,35 @@ with tabs[0]:
     st.header("Diagnóstico del Modelo")
     st.markdown("En esta sección evaluamos si existe dependencia espacial. En palabras simples: **¿El nivel de industrialización de un departamento se ve afectado por lo que pasa en los departamentos vecinos?**")
     
+    # --- NUEVA SECCIÓN: SELECCIÓN AUTOMÁTICA ---
+    st.markdown("---")
+    st.subheader("🏆 Resultados de la Selección Automática")
+    col_sel1, col_sel2 = st.columns(2)
+    with col_sel1:
+        st.info(f"**Matriz de Vecinos (W):**\n\n### {res['best_w_name']}")
+    with col_sel2:
+        st.info(f"**Modelo Espacial Seleccionado:**\n\n### {res['best_spec_name']}")
+        
+    with st.expander("🔍 ¿Por qué se eligió esta Matriz y este Modelo?"):
+        st.markdown("""
+        **1. ¿Por qué esta Matriz de Vecinos (W)?**
+        El código probó múltiples formas de definir la vecindad (desde 3 hasta 8 vecinos más cercanos). La matriz ganadora se seleccionó utilizando un *score* que premia:
+        - Un **Índice de Moran (I)** alto y significativo (mayor dependencia espacial).
+        - Un **AIC y Log-Likelihood** óptimos (mejor ajuste estadístico).
+        - Un promedio de vecinos balanceado.
+        *Puedes ver el ranking completo de matrices abajo.*
+        
+        **2. ¿Por qué este Modelo Espacial?**
+        Se estimaron los modelos **SAR** (contagio directo), **SEM** (correlación de errores) y **SDM** (Durbin). Se seleccionó el modelo con el **AIC (Criterio de Información de Akaike) más bajo**. Un AIC más bajo significa que el modelo explica mejor los datos sin volverse innecesariamente complejo. En este caso, el **{res['best_spec_name']}** obtuvo el mejor AIC.
+        """)
+        st.markdown("**Ranking de las Matrices W evaluadas:**")
+        df_ranking_ui = res['df_w_rank'][["W", "Moran_I", "Moran_p", "AIC", "score"]].copy()
+        df_ranking_ui.columns = ["Matriz", "Moran I", "p-valor", "AIC", "Score Final"]
+        st.dataframe(df_ranking_ui.round(4), use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("Pruebas Estadísticas del Modelo")
+    
     X_ols = sm.add_constant(gdf_ui[["gini", "educacion_superior", "log_pib_percapita"]].values)
     ols_fit = sm.OLS(gdf_ui["log_industria"].values, X_ols).fit()
     mi_resid = Moran(ols_fit.resid, res["w_ui"])
@@ -753,8 +784,8 @@ with tabs[0]:
         df_betas = pd.DataFrame(list(res["betas_dict"].items()), columns=["Variable", "Coeficiente"])
         df_betas["Variable"] = df_betas["Variable"].map(lambda x: VAR_LABELS.get(x, x))
         st.dataframe(df_betas, use_container_width=True)
-  
-# INTERPRETACIÓN DE ELASTICIDADES (RESTAURADA)
+
+    # INTERPRETACIÓN DE ELASTICIDADES
     st.markdown("---")
     st.markdown("### 📊 Magnitud de los Efectos (Elasticidades)")
     st.markdown("Como las variables están en logaritmos, los coeficientes se leen como **elasticidades**. En palabras simples: *Si la variable X cambia en 1%, la industria cambia en el porcentaje que indica el coeficiente.*")
@@ -1022,6 +1053,7 @@ with tabs[4]:
     st.subheader("Reporte PDF")
     st.write("Genera un documento formal con los resultados de la estimación principal.")
     if st.button("Generar PDF"):
+        from io import BytesIO  # <--- ESTO SOLUCIONA EL ERROR
         from reportlab.lib.pagesizes import A4
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
