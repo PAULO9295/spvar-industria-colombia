@@ -864,15 +864,15 @@ with tabs[4]:
     for message in st.session_state.messages:
         with st.chat_message(message["role"]): st.markdown(message["content"])
         
-    if prompt := st.chat_input("Ej: ¿Qué significa el Gini? o ¿Qué es un impacto indirecto?"):
+       if prompt := st.chat_input("Ej: ¿Qué es la matriz W? o ¿Por qué la desigualdad afecta la industria?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"): st.markdown(prompt)
         
         m = prompt.lower()
         
-        # --- RESPUESTAS DEL CHATBOT ---
+        # --- RESPUESTAS DEL CHATBOT EXPANDIDO ---
         if "moran" in m:
-            resp = "El **Índice de Moran (Moran's I)** mide la autocorrelación espacial. En palabras simples: nos dice si los departamentos con alta industria están agrupados geográficamente o dispersos. Imagina un mapa: si los departamentos industriales están todos juntos (como en el centro del país), Moran será positivo. Si están aleatorios, Moran será cercano a cero. En tu modelo, un Moran positivo y significativo justifica el uso de modelos espaciales."
+            resp = "El **Índice de Moran (Moran's I)** mide la autocorrelación espacial. En palabras simples: nos dice si los departamentos con alta industria están agrupados geográficamente. Imagina un mapa: si los departamentos industriales están todos juntos (como en el centro de Colombia), Moran será positivo. Si están aleatorios, será cercano a cero. En tu modelo, un Moran positivo justifica el uso de modelos espaciales."
         elif "sar" in m:
             resp = "El **Modelo SAR (Spatial Autoregressive)** asume que el nivel de industria de un departamento depende **directamente** del nivel de industria de sus vecinos. La lógica es: 'si a mis vecinos les va bien, a mí también me irá bien' (efecto contagio). Matemáticamente: `Y = ρWY + Xβ`. La variable `WY` es la industria de los vecinos y `ρ` (rho) es el nivel de contagio."
         elif "sem" in m:
@@ -897,22 +897,44 @@ with tabs[4]:
             resp = "El **SpVAR Espacial** es un modelo avanzado (Pestaña 4) que estima un sistema de ecuaciones simultáneas. Asume que la industria, la desigualdad, la educación y la riqueza no solo dependen de sí mismas en el pasado, sino que **se afectan mutuamente** y se contagian espacialmente. Permite ver cómo un shock en una variable afecta a todas las demás."
         elif "matriz" in m or "lesage" in m or "pace" in m:
             resp = "Las **Matrices de LeSage-Pace** (en la Pestaña 4) descomponen los impactos de un shock. Muestran en las filas a la variable que recibe el efecto, y en las columnas a la variable que lo origina. Nos dicen si el efecto es Directo (local), Indirecto (vecinos) o Total (sistémico)."
-        elif "gini" in m or "desigualdad" in m:
-            resp = f"El **Índice de Gini** mide la desigualdad de ingresos (0 = igualdad total, 1 = desigualdad total). En tu modelo, el coeficiente es {res['betas_dict'].get('gini', 0):.2f}. Un valor negativo indica que a mayor desigualdad, menor es el nivel de industria en el departamento."
-        elif "educacion" in m or "capital humano" in m:
-            resp = f"La **Educación Superior** se usa como proxy de capital humano. En tu modelo, el coeficiente es {res['betas_dict'].get('educacion_superior', 0):.2f}. Un valor positivo significa que a mayor cobertura educativa, mayor es el desarrollo de la industria manufacturera."
-        elif "pib" in m or "riqueza" in m or "ingreso" in m:
-            resp = f"El **PIB per cápita** se usa como proxy de la riqueza o desarrollo económico. En tu modelo, el coeficiente es {res['betas_dict'].get('log_pib_percapita', 0):.2f}. Un valor positivo indica que los departamentos más ricos tienden a tener una industria más fuerte."
-        elif "industria" in m or "manufactura" in m:
-            resp = "La **Industria Manufacturera** es nuestra variable dependiente (Y). Medimos su nivel a través del Valor Agregado a precios constantes (logaritmo). Es el motor económico que estamos intentando explicar en función de la geografía y las variables socioeconómicas."
+        
+        # --- NUEVAS RESPUESTAS (METODOLOGÍA Y GRÁFICOS) ---
+        elif "matriz w" in m or "pesos" in m or "vecinos" in m:
+            resp = "La **Matriz W (Matriz de Pesos Espaciales)** es la forma en que la computadora entiende la geografía. Básicamente, es un mapa que define quién es 'vecino' de quién. En tu modelo se usó el criterio de 'K-Vecinos más cercanos' (KNN), lo que significa que cada departamento está conectado con sus 4 o 5 vecinos geográficamente más próximos."
+        elif "log" in m or "logaritmo" in m or "log-log" in m:
+            resp = "Usamos **logaritmos** en los datos por dos razones: 1) Para estabilizar la varianza (evitar que departamentos gigantes como Bogotá o Antioquia distorsionen la escala) y 2) Porque en un modelo 'log-log', los coeficientes se leen directamente como **porcentajes (elasticidades)**, lo cual es mucho más fácil de interpretar que los valores absolutos en pesos colombianos."
+        elif "flecha" in m or "color" in m or "mapa" in m:
+            resp = "En los mapas de simulación (Pestaña 3 y 4): \n- Las **flechas rojas** indican un efecto positivo (derrame de crecimiento). \n- Las **flechas azules** indican un efecto negativo (derrame de crisis o recesión). \n- El color del departamento te dice si su industria subió (rojo) o bajó (azul) tras el shock simulado."
+        elif "calor" in m or "heatmap" in m or "matriz k" in m:
+            resp = "El **Mapa de Calor (Heatmap)** de la Pestaña 4 es como una radiografía. En el eje Y están las 4 variables (Industria, Gini, Educación, PIB) y en el eje X están todos los departamentos. Si ves un cuadro de color rojo intenso, significa que esa variable en ese departamento específico creció mucho debido al shock. Los cuadros azules significan que disminuyó."
+        elif "irf" in m or "impulso" in m or "respuesta" in m:
+            resp = "La **IRF (Impulse Response Function)** o Función de Impulso-Respuesta muestra el 'viaje' del shock en el tiempo geográfico. El punto 0 es el impacto local, el 1 son los vecinos directos, el 2 son los vecinos de los vecinos, etc. Si la línea azul (vecinos) sube en los primeros pasos, significa que el contagio espacial está funcionando muy rápido."
+        elif "mco" in m or "ols" in m or "regresión lineal" in m:
+            resp = "**MCO (Mínimos Cuadrados Ordinarios)** es el modelo estadístico tradicional. Se usa como punto de partida, pero tiene una falla: asume que cada departamento es independiente. En geografía, eso es falso (lo que pasa en Cundinamarca afecta a Bogotá). Por eso usamos modelos espaciales (SAR, SEM) que superan esta limitación."
         elif "aic" in m:
-            resp = "El **AIC (Criterio de Información de Akaike)** es una medida de la calidad del modelo estadístico. Cuanto **menor** sea el valor, mejor es el modelo (porque se ajusta bien a los datos sin ser innecesariamente complejo). Tu app eligió el modelo actual porque tenía el AIC más bajo."
+            resp = "El **AIC (Criterio de Información de Akaike)** es una medida de la calidad del modelo estadístico. Cuanto **menor** sea el valor, mejor es el modelo (porque se ajusta bien a los datos sin ser innecesariamente complejo). Tu app eligió el modelo actual porque tenía el AIC más bajo entre todas las opciones."
+
+        # --- NUEVAS RESPUESTAS (ECONOMÍA Y DATOS) ---
+        elif "gini" in m or "desigualdad" in m:
+            resp = f"El **Índice de Gini** mide la desigualdad de ingresos (0 = igualdad total, 1 = desigualdad total). En tu modelo, el coeficiente es {res['betas_dict'].get('gini', 0):.2f}. Un valor negativo indica que a mayor desigualdad, menor es el nivel de industria. ¿Por qué? Porque la desigualdad reduce el mercado interno (la gente no puede comprar productos) y genera inestabilidad social que ahuyenta la inversión."
+        elif "educacion" in m or "capital humano" in m:
+            resp = f"La **Educación Superior** se usa como proxy de capital humano. En tu modelo, el coeficiente es {res['betas_dict'].get('educacion_superior', 0):.2f}. Es positivo porque la manufactura moderna (tecnología, maquinaria) requiere trabajadores calificados, ingenieros y técnicos. Sin educación, la industria no puede innovar."
+        elif "pib" in m or "riqueza" in m or "ingreso" in m:
+            resp = f"El **PIB per cápita** se usa como proxy de la riqueza o desarrollo económico. En tu modelo, el coeficiente es {res['betas_dict'].get('log_pib_percapita', 0):.2f}. Es positivo porque los departamentos más ricos tienen mejor infraestructura (carreteras, puertos, energía) que facilita la producción industrial."
+        elif "bogota" in m or "antioquia" in m or "valle" in m:
+            resp = "Bogotá, Antioquia y Valle del Cauca son los departamentos con mayor industria. Esto se debe a su historia de desarrollo, concentración de infraestructura, acceso a puertos (en el caso del Valle) y alta densidad poblacional. Por eso aparecen con colores fuertes (rojos) en los mapas de calor."
+        elif "andina" in m or "centro" in m:
+            resp = "La **Región Andina** (centro de Colombia: Bogotá, Cundinamarca, Boyacá, Santander) es el corazón industrial del país. En los mapas LISA, verás un gran clúster rojo (HH - Alto-Alto) allí porque son regiones industrializadas rodeadas de otras igual de industrializadas, lo que genera una sinergia productiva muy fuerte."
+
+        # --- NUEVAS RESPUESTAS (USO DE LA APP) ---
+        elif "como" in m or "ayuda" in m or "usar" in m or "simular" in m:
+            resp = "¡Es fácil! Ve a la **Pestaña 3** o **Pestaña 4**. Selecciona un departamento, mueve los sliders (por ejemplo, aumenta la educación un 5%) y presiona el botón 'Generar Simulación'. Verás cómo el mapa te muestra si esa mejora contagia a los vecinos o no. No necesitas saber programar, solo explorar."
+        elif "por que" in m or "porque" in m:
+            resp = "Las relaciones espaciales existen porque la economía no es una isla. Las empresas se aglomeran cerca de otras empresas (economías de escala), los trabajadores viajan entre departamentos vecinos, y las crisis o bonanzas se contagian por el comercio regional. La econometría espacial intenta capturar exactamente eso."
+
+        # --- RESPUESTA POR DEFECTO ---
         else:
-            resp = "¡Interesante pregunta! Para conceptos espaciales te recomiendo preguntarme por: **Moran, SAR, SEM, SDM, Rho, Lambda, Elasticidades, Impacto Directo/Indirecto, LISA, SpVAR o Matrices**. Si quieres saber sobre un departamento específico, ve a la Pestaña 3 y usa el simulador."
+            resp = "¡Interesante pregunta! Aún estoy aprendiendo. Intenta preguntarme sobre:\n- **Modelos:** SAR, SEM, SDM, SpVAR, MCO\n- **Geografía:** Matriz W, LISA, Región Andina\n- **Resultados:** Rho, Lambda, Elasticidades, AIC\n- **Gráficos:** Flechas, Mapa de calor, IRF\n- **Economía:** Gini, Educación, PIB\n- **Uso:** ¿Cómo simular?"
             
         st.session_state.messages.append({"role": "assistant", "content": resp})
         with st.chat_message("assistant"): st.markdown(resp)
-
-    # --- REPORTE PDF ---
-    st.markdown("---")
-    # ... (deja tu código del PDF igual)
