@@ -768,12 +768,29 @@ with tabs[0]:
   
 with tabs[1]:
     st.header("Mapas y Clústeres Espaciales")
-    st.markdown("Explora visualmente cómo se distribuyen las variables en Colombia y dónde hay clústeres (grupos) significativos.")
+    st.markdown("Explora visualmente cómo se distribuyen las variables en Colombia. **Cada variable tiene su propia paleta de colores** para facilitar la lectura.")
+    
     col1, col2 = st.columns(2)
     with col1:
-        # AGREGA "log_poblacion" A LA LISTA AQUÍ ABAJO 👇
-        var_sel = st.selectbox("Variable a mapear", ["log_industria", "gini", "educacion_superior", "log_pib_percapita", "log_poblacion"], format_func=lambda x: VAR_LABELS.get(x, x), help="Selecciona qué variable quieres ver en el mapa de calor.")
+        var_sel = st.selectbox(
+            "Variable a mapear", 
+            ["log_industria", "gini", "educacion_superior", "log_pib_percapita", "log_poblacion"], 
+            format_func=lambda x: VAR_LABELS.get(x, x), 
+            help="Selecciona qué variable quieres ver en el mapa de calor."
+        )
+        
+        # Pequeña descripción según la variable
+        descripciones = {
+            "log_industria": "Muestra los polos de desarrollo manufacturero. Los colores rojos intensos indican mayor producción.",
+            "gini": "Muestra la desigualdad de ingresos. Los rojos más oscuros indican mayor desigualdad.",
+            "educacion_superior": "Muestra la cobertura educativa. Los azules más oscuros indican mayor acceso a educación superior.",
+            "log_pib_percapita": "Muestra la riqueza generada. Los verdes más oscuros indican mayor PIB por persona.",
+            "log_poblacion": "Muestra el tamaño del mercado. Los morados más oscuros indican departamentos más poblados."
+        }
+        st.caption(f"💡 **¿Qué estás viendo?** {descripciones.get(var_sel, '')}")
+        
         st.plotly_chart(crear_choropleth(gdf_map, var_sel), use_container_width=True)
+        
     with col2:
         st.subheader("Clústeres LISA")
         st.plotly_chart(crear_lisa_map(gdf_map, res["lisa_Y"]), use_container_width=True)
