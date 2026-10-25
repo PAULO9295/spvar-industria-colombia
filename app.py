@@ -103,6 +103,8 @@ def leer_excel_drive(file_id, sheet_name, header=None):
 # ==========================================
 @st.cache_data(show_spinner="Cargando datos y construyendo variables...")
 def cargar_datos():
+    import re
+
     # --- 1. GEOMETRÍA ---
     gdf_geo = gpd.read_file(URL_GEOMETRIA)
     rename = {}
@@ -118,11 +120,11 @@ def cargar_datos():
     gdf_geo[NOMBRE_COL] = gdf_geo[NOMBRE_COL].apply(normalizar_nombre_depto)
     gdf_geo = gdf_geo[[COD_DANE_COL, NOMBRE_COL, "geometry"]]
 
-    # --- FUNCIÓN MAESTRA (Lógica exacta de Colab) ---
+    # --- FUNCIÓN DE EXTRACCIÓN MAESTRA ---
     def extraer_datos_excel(file_id, sheet_name, es_industria=False):
         df_raw = leer_excel_drive(file_id, sheet_name=sheet_name, header=None)
-        
         header_idx = None
+        
         if es_industria:
             titulo_idx = None
             for i in range(len(df_raw)):
@@ -131,46 +133,39 @@ def cargar_datos():
                     titulo_idx = i
                     break
             if titulo_idx is not None:
-                for i in range(titulo_idx + 1, min(titulo_idx + 15, len(df_raw))):
-                    row_str = " ".join(df_raw.iloc[i].astype(str).str.upper().tolist())
-                    # Forzamos "DEPARTAMENTOS" (plural) y años históricos
-                    if "DEPARTAMENTOS" in row_str and ("2005" in row_str or "2010" in row_str):
+                for i in range(titulo_idx + 1, min(titulo_idx + 25, len(df_raw))):
+                    # AQUI ESTA LA MAGIA: map(str, ...) evita el TypeError de Pandas
+                    row_str = " ".join(map(str, df_raw.iloc[i].values)).upper()
+                    if "DEPARTAMENTO" in row_str and any(str(y) in row_str for y in range(2000, 2030)):
                         header_idx = i
                         break
         else:
-            for i in range(min(15, len(df_raw))):
-                row_str = " ".join(df_raw.iloc[i].astype(str).str.upper().tolist())
-                # Para PIB
-                if "DEPARTAMENTOS" in row_str and ("2005" in row_str or "2010" in row_str):
-                    header_idx = i
-                    break
-                # Para Educación (que suele ser singular y con años distintos)
-                if "DEPARTAMENTO" in row_str and ("2015" in row_str or "2018" in row_str or "2020" in row_str):
+            # Búsqueda directa en las primeras 30 filas para PIB y Educación
+            for i in range(min(30, len(df_raw))):
+                row_str = " ".join(map(str, df_raw.iloc[i].values)).upper()
+                if "DEPARTAMENTO" in row_str and any(str(y) in row_str for y in range(2000, 2030)):
                     header_idx = i
                     break
 
         if header_idx is None:
-            raise ValueError(f"No se encontró el encabezado real en {sheet_name}")
+            raise ValueError(f"No se encontró el encabezado de años en la hoja {sheet_name}")
 
         headers = [str(h).strip() if pd.notna(h) else f"col_{j}" for j, h in enumerate(df_raw.iloc[header_idx].tolist())]
         
-        # Mapeo de años idéntico a tu cuaderno de Colab
+        # Extracción de años con Regex
         year_pos = {}
         for j, c in enumerate(headers):
             if j < 2: continue
-            c_clean = str(c).replace("p", "").replace("r", "").replace(".0", "").strip()
-            try:
-                y = int(float(c_clean))
-                if 2000 <= y <= 2030 and y not in year_pos:
+            match = re.search(r'(200\d|201\d|202\d)', str(c))
+            if match:
+                y = int(match.group(0))
+                if y not in year_pos:
                     year_pos[y] = j
-            except Exception:
-                pass
 
-        anios = sorted(year_pos.keys())
-        if not anios:
-            raise ValueError(f"No se encontraron años en los encabezados de {sheet_name}")
+        if not year_pos:
+            raise ValueError(f"No se encontraron años válidos en el encabezado de {sheet_name}")
             
-        anio_usado = min(anios, key=lambda y: abs(y - 2019))
+        anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
         pos_anio = year_pos[anio_usado]
 
         nombres = df_raw.iloc[header_idx+1:, 1]
@@ -203,10 +198,8 @@ def cargar_datos():
     code_col = next((c for c in df_gini.columns if "CCDGO" in c.upper() or "COD" in c.upper()), None)
     gini_cols = sorted([c for c in df_gini.columns if "GINI" in c.upper()])
     if not code_col or not gini_cols:
-        st.error("Error en el JSON de Gini.")
-        st.stop()
-    val_col = gini_cols[-1]
-    gini = df_gini[[code_col, val_col]].copy()
+        raise ValueError("Error en el JSON de Gini.")
+    gini = df_gini[[code_col, gini_cols[-1]]].copy()
     gini.columns = [COD_DANE_COL, "gini"]
     gini[COD_DANE_COL] = clean_cod_dane(gini[COD_DANE_COL])
     gini["gini"] = pd.to_numeric(gini["gini"], errors="coerce")
