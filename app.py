@@ -855,9 +855,8 @@ with tabs[3]:
 with tabs[4]:
     st.header("Chatbot Educativo y Reporte PDF")
     
-    # --- CHATBOT EXPANDIDO ---
-    st.subheader("Asistente de Econometría Espacial")
-    st.markdown("Pregúntame sobre conceptos como Moran, SAR, Gini, Spillovers, etc. Te explicaré de forma sencilla.")
+    st.subheader("Asistente Virtual de Econometría Espacial")
+    st.markdown("Pregúntame sobre cualquier concepto del modelo, resultados o interpretaciones. Estoy aquí para ayudarte a entender los números.")
     
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -865,53 +864,55 @@ with tabs[4]:
     for message in st.session_state.messages:
         with st.chat_message(message["role"]): st.markdown(message["content"])
         
-    if prompt := st.chat_input("Ej: ¿Qué es el test de Moran? o ¿Qué significa un SAR?"):
+    if prompt := st.chat_input("Ej: ¿Qué significa el Gini? o ¿Qué es un impacto indirecto?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"): st.markdown(prompt)
         
         m = prompt.lower()
+        
+        # --- RESPUESTAS DEL CHATBOT ---
         if "moran" in m:
-            resp = "El **Índice de Moran (Moran's I)** es una medida estadística que nos dice si los datos están agrupados geográficamente o dispersos. Imagina un mapa de Colombia: si los departamentos con alta industria están todos juntos en el centro, Moran será positivo. Si están dispersos aleatoriamente, Moran será cercano a cero. En tu modelo, lo usamos para demostrar que la geografía SÍ importa en la industria."
+            resp = "El **Índice de Moran (Moran's I)** mide la autocorrelación espacial. En palabras simples: nos dice si los departamentos con alta industria están agrupados geográficamente o dispersos. Imagina un mapa: si los departamentos industriales están todos juntos (como en el centro del país), Moran será positivo. Si están aleatorios, Moran será cercano a cero. En tu modelo, un Moran positivo y significativo justifica el uso de modelos espaciales."
         elif "sar" in m:
-            resp = "El **Modelo SAR (Spatial Autoregressive)** se usa cuando el nivel de industria de un departamento depende DIRECTAMENTE del nivel de industria de sus vecinos. En palabras simples, asume que 'si a mis vecinos les va bien, a mí también me irá bien'. Matemáticamente se ve como `Y = ρWY + Xβ`, donde el término `WY` es el efecto de los vecinos y `ρ` es el nivel de contagio."
+            resp = "El **Modelo SAR (Spatial Autoregressive)** asume que el nivel de industria de un departamento depende **directamente** del nivel de industria de sus vecinos. La lógica es: 'si a mis vecinos les va bien, a mí también me irá bien' (efecto contagio). Matemáticamente: `Y = ρWY + Xβ`. La variable `WY` es la industria de los vecinos y `ρ` (rho) es el nivel de contagio."
         elif "sem" in m:
-            resp = "El **Modelo SEM (Spatial Error Model)** es diferente al SAR. Aquí no es que la industria de los vecinos te afecte directamente, sino que hay 'shocks' o errores no observados (como una política regional, un clima extremo o una crisis) que afectan a toda una zona geográfica al mismo tiempo. Por eso se dice que el contagio está en el 'error' o en lo no observado."
+            resp = "El **Modelo SEM (Spatial Error Model)** es diferente al SAR. Aquí no es que la industria de los vecinos te afecte directamente, sino que existen 'shocks' o factores no observados (como un clima extremo, políticas regionales o crisis) que afectan a toda una zona geográfica al mismo tiempo. El contagio está en el 'error' (lo no observado)."
         elif "sdm" in m:
-            resp = "El **Modelo SDM (Spatial Durbin Model)** es el más completo. Combina el SAR y el SEM. Asume que tu industria depende de la industria de tus vecinos, PERO TAMBIÉN de las características de tus vecinos (como su nivel de educación o su riqueza). Es como decir: 'me afecta que mi vecino produzca mucho, pero también me afecta que mi vecino sea muy educado o muy rico'."
+            resp = "El **Modelo SDM (Spatial Durbin Model)** es el más completo. Asume que tu industria depende de la industria de tus vecinos, **pero también** de las características de tus vecinos (como su nivel de educación o su riqueza). Es decir: 'me afecta que mi vecino produzca mucho, pero también me afecta que mi vecino sea muy educado'."
         elif "rho" in m or "ρ" in m:
-            resp = f"El **coeficiente ρ (rho)** es el 'multiplicador de contagio espacial'. En tu modelo actual es **{res['rho_ui']:.3f}**. Si es positivo y alto, significa que un shock económico en un departamento no se queda ahí, sino que se amplifica y se esparce a los vecinos, creando un efecto dominó regional."
-        elif "gini" in m:
-            resp = "El **Índice de Gini** mide la desigualdad de ingresos. Va de 0 (todos ganan lo mismo) a 1 (una persona gana todo). En tu modelo, sirve para ver si la desigualdad frena la industria. Si el coeficiente es negativo, significa que a mayor desigualdad, menor desarrollo industrial."
+            resp = f"El **coeficiente ρ (rho)** es el 'multiplicador de contagio espacial'. En tu modelo actual es **{res['rho_ui']:.3f}**. Si es positivo, significa que un shock económico en un departamento no se queda ahí, sino que se amplifica y se esparce a los vecinos, creando un efecto dominó regional."
+        elif "lambda" in m or "λ" in m:
+            resp = f"El **coeficiente λ (lambda)** es propio de los modelos SEM (de error espacial). En tu modelo es **{res['lambda_ui']:.3f}**. Mide cómo los 'errores' o shocks no observados (como una crisis política) afectan de manera conjunta a departamentos que están geográficamente cerca."
+        elif "elasticidad" in m or "magnitud" in m or "coeficiente" in m or "beta" in m:
+            resp = "Las **elasticidades** (o coeficientes beta) indican la magnitud del efecto. Al usar un modelo log-log, un coeficiente de 2.5 significa que un aumento del 1% en la variable X provocará un aumento del 2.5% en la industria. Puedes ver las magnitudes exactas de tu modelo en la Pestaña 1 (Diagnóstico)."
+        elif "directo" in m:
+            resp = "El **impacto directo** es el efecto que tiene un cambio (ej. mejorar la educación) sobre el **mismo departamento** donde ocurrió el cambio. Es el efecto 'local' antes de que se propague a los vecinos."
+        elif "indirecto" in m or "spillover" in m or "derrame" in m:
+            resp = "El **impacto indirecto** (o Spillover) es el efecto dominó. Es cómo un cambio en un departamento (ej. Antioquia) afecta a la industria de los **departamentos vecinos**. Este es el concepto central de la Pestaña 3. La suma del directo y el indirecto da el impacto **Total**."
+        elif "total" in m:
+            resp = "El **impacto total** es la suma del impacto directo (local) y el indirecto (derrame a vecinos). Es la forma más completa de medir cuánto cambia el sistema económico en general tras un shock."
         elif "lisa" in m:
-            resp = "**LISA (Local Indicators of Spatial Association)** es una técnica que descompone el mapa para encontrar 'puntos calientes'. En lugar de darnos un solo número para todo el país, nos dice dónde exactamente están los clústeres. Por ejemplo, el clúster 'HH' (Alto-Alto) significa que hay un grupo de departamentos muy industrializados rodeados de otros igual de industrializados (como el centro del país)."
-        elif "spillover" in m or "derrame" in m:
-            resp = "Un **Spillover (o efecto derrame)** ocurre cuando el cambio en una variable (ej. mejorar la educación en Antioquia) no solo afecta a Antioquia, sino que 'se derrama' a los departamentos vecinos. Es el concepto central de esta app. La Pestaña 3 te permite simular exactamente esto visualmente con flechas."
+            resp = "**LISA** significa Local Indicators of Spatial Association. Es una técnica que nos dice exactamente dónde están los 'puntos calientes'. Por ejemplo, el clúster 'HH' (Alto-Alto) significa que hay un grupo de departamentos muy industrializados rodeados de otros igual de industrializados (como Bogotá y Cundinamarca). 'LL' significa baja industria rodeada de baja industria."
+        elif "spvar" in m or "var" in m:
+            resp = "El **SpVAR Espacial** es un modelo avanzado (Pestaña 4) que estima un sistema de ecuaciones simultáneas. Asume que la industria, la desigualdad, la educación y la riqueza no solo dependen de sí mismas en el pasado, sino que **se afectan mutuamente** y se contagian espacialmente. Permite ver cómo un shock en una variable afecta a todas las demás."
+        elif "matriz" in m or "lesage" in m or "pace" in m:
+            resp = "Las **Matrices de LeSage-Pace** (en la Pestaña 4) descomponen los impactos de un shock. Muestran en las filas a la variable que recibe el efecto, y en las columnas a la variable que lo origina. Nos dicen si el efecto es Directo (local), Indirecto (vecinos) o Total (sistémico)."
+        elif "gini" in m or "desigualdad" in m:
+            resp = f"El **Índice de Gini** mide la desigualdad de ingresos (0 = igualdad total, 1 = desigualdad total). En tu modelo, el coeficiente es {res['betas_dict'].get('gini', 0):.2f}. Un valor negativo indica que a mayor desigualdad, menor es el nivel de industria en el departamento."
+        elif "educacion" in m or "capital humano" in m:
+            resp = f"La **Educación Superior** se usa como proxy de capital humano. En tu modelo, el coeficiente es {res['betas_dict'].get('educacion_superior', 0):.2f}. Un valor positivo significa que a mayor cobertura educativa, mayor es el desarrollo de la industria manufacturera."
+        elif "pib" in m or "riqueza" in m or "ingreso" in m:
+            resp = f"El **PIB per cápita** se usa como proxy de la riqueza o desarrollo económico. En tu modelo, el coeficiente es {res['betas_dict'].get('log_pib_percapita', 0):.2f}. Un valor positivo indica que los departamentos más ricos tienden a tener una industria más fuerte."
+        elif "industria" in m or "manufactura" in m:
+            resp = "La **Industria Manufacturera** es nuestra variable dependiente (Y). Medimos su nivel a través del Valor Agregado a precios constantes (logaritmo). Es el motor económico que estamos intentando explicar en función de la geografía y las variables socioeconómicas."
+        elif "aic" in m:
+            resp = "El **AIC (Criterio de Información de Akaike)** es una medida de la calidad del modelo estadístico. Cuanto **menor** sea el valor, mejor es el modelo (porque se ajusta bien a los datos sin ser innecesariamente complejo). Tu app eligió el modelo actual porque tenía el AIC más bajo."
         else:
-            resp = "¡Buena pregunta! Para conceptos espaciales te recomiendo preguntarme por: **Moran, SAR, SEM, SDM, Rho, Gini, LISA o Spillovers**. Si quieres saber sobre un departamento específico, ¡ve a la Pestaña 3 y usa el simulador!"
+            resp = "¡Interesante pregunta! Para conceptos espaciales te recomiendo preguntarme por: **Moran, SAR, SEM, SDM, Rho, Lambda, Elasticidades, Impacto Directo/Indirecto, LISA, SpVAR o Matrices**. Si quieres saber sobre un departamento específico, ve a la Pestaña 3 y usa el simulador."
             
         st.session_state.messages.append({"role": "assistant", "content": resp})
         with st.chat_message("assistant"): st.markdown(resp)
 
     # --- REPORTE PDF ---
     st.markdown("---")
-    st.subheader("Reporte PDF")
-    st.write("Genera un documento formal con los resultados de la estimación principal.")
-    if st.button("Generar PDF"):
-        from reportlab.lib.pagesizes import A4
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib import colors
-        from reportlab.lib.units import cm
-        from reportlab.lib.enums import TA_CENTER
-
-        buf = BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=A4)
-        st_style = getSampleStyleSheet()
-        title_s = ParagraphStyle("T", parent=st_style["Heading1"], alignment=TA_CENTER)
-        
-        story = [Paragraph("Reporte — Modelo Espacial de Industria", title_s), Spacer(1, 0.5*cm)]
-        story.append(Paragraph(f"Especificación: {res['best_spec_name']} · ρ = {res['rho_ui']:.3f}", st_style["Normal"]))
-        doc.build(story)
-        buf.seek(0)
-        st.download_button("⬇️ Descargar PDF", data=buf.getvalue(), file_name="reporte_econometria.pdf", mime="application/pdf")
-        st.download_button("⬇️ Descargar PDF", data=buf.getvalue(), file_name="reporte_econometria.pdf", mime="application/pdf")
+    # ... (deja tu código del PDF igual)
