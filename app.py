@@ -929,7 +929,33 @@ with tabs[4]:
             resp = "Las relaciones espaciales existen porque la economía no es una isla. Las empresas se aglomeran cerca de otras empresas (economías de escala), los trabajadores viajan entre departamentos vecinos, y las crisis o bonanzas se contagian por el comercio regional. La econometría espacial intenta capturar exactamente eso."
         else:
             resp = "¡Interesante pregunta! Aún estoy aprendiendo. Intenta preguntarme sobre:\n- **Modelos:** SAR, SEM, SDM, SpVAR, MCO\n- **Geografía:** Matriz W, LISA, Región Andina\n- **Resultados:** Rho, Lambda, Elasticidades, AIC\n- **Gráficos:** Flechas, Mapa de calor, IRF\n- **Economía:** Gini, Educación, PIB\n- **Uso:** ¿Cómo simular?"
-            
+                # --- NUEVAS RESPUESTAS (ESTADÍSTICA Y METODOLOGÍA PROFUNDA) ---
+        elif "p-valor" in m or "p valor" in m or "pvalue" in m or "significancia" in m:
+            resp = "El **p-valor** (o valor de probabilidad) es la 'prueba de la duda'. Nos dice si un resultado es real o solo producto de la casualidad. En economía, el estándar es que el p-valor sea **menor a 0.05 (5%)**. Si tu test de Moran tiene un p-valor de 0.001, significa que hay solo 0.1% de probabilidad de que el agrupamiento espacial sea casualidad. ¡Es altamente confiable!"
+        elif "knn" in m or "queen" in m or "rook" in m or "reina" in m:
+            resp = "Para definir 'vecinos', usamos la **Matriz de Pesos (W)**. Usamos el método **KNN (K-Vecinos más cercanos)** porque es ideal para departamentos irregulares. Otros métodos son 'Queen' o 'Rook' (que buscan compartir fronteras físicas), pero fallan en Colombia porque San Andrés, por ejemplo, no tiene fronteras terrestres. KNN soluciona eso conectando cada isla o departamento con sus 4 o 5 más cercanos por distancia."
+        elif "endogeneidad" in m:
+            resp = "La **endogeneidad** es el problema del 'huevo y la gallina'. Ocurre cuando no sabemos qué causa qué. Por ejemplo: ¿La educación genera más industria, o la industria genera más dinero para pagar educación? Los modelos espaciales como el SpVAR intentan controlar esto mirando las relaciones de forma simultánea y a través del tiempo y el espacio."
+        
+        # --- NUEVAS RESPUESTAS (POLÍTICA PÚBLICA Y APLICACIÓN) ---
+        elif "gobierno" in m or "política" in m or "decisiones" in m or "aplicación" in m:
+            resp = "¡Esta app es una herramienta de política pública! Si un gobernador quiere industrializar su departamento, el modelo le dice que no basta con dar subsidios locales (impacto directo). Debe coordinarse con los departamentos vecinos (impacto indirecto). Por ejemplo, mejorar la educación en Boyacá beneficiará la industria de Cundinamarca, y viceversa. Las políticas aisladas son menos efectivas que las políticas regionales conjuntas."
+        elif "tesis" in m or "conclusión" in m or "recomendación" in m:
+            resp = "Para tus conclusiones, puedes destacar tres puntos clave: 1) La industria manufacturera en Colombia está altamente concentrada (Clústeres LISA). 2) Existen fuertes efectos de derrame (Spillovers): el crecimiento no es aislado. 3) La desigualdad (Gini) actúa como un freno a la industria, mientras que la educación y el PIB son motores de crecimiento. ¡La geografía importa!"
+        elif "boyaca" in m or "santander" in m or "cundinamarca" in m:
+            resp = "Departamentos como Boyacá, Santander y Cundinamarca forman el **corazón industrial del país**. Al estar juntos, crean un ecosistema donde las empresas se proveen entre sí. En los mapas LISA verás que son el clúster 'HH' (Alto-Alto). Si haces una simulación, notarás que un shock positivo en cualquiera de ellos tendrá un efecto dominó inmediato en los otros dos."
+        
+        # --- NUEVAS RESPUESTAS (FÓRMULAS EXPLICADAS) ---
+        elif "formula" in m or "fórmula" in m or "ecuación" in m or "matemática" in m:
+            resp = "Las fórmulas asustan, pero son lógicas: \n- **SAR:** `Y = ρWY + Xβ`. Significa: 'Mi industria (Y) depende de mi inversión local (X) y de la industria de mis vecinos (WY)'. \n- **LeSage-Pace:** Usa la inversa `(I - ρW)⁻¹` para calcular cuántas 'vueltas' da el dinero por la economía regional antes de agotarse. ¡Es el multiplicador de contagio!"
+        
+        # --- NUEVAS RESPUESTAS (TROUBLESHOOTING / DUDAS DE LA APP) ---
+        elif "cero" in m or "no sale" in m or "vacío" in m or "error" in m:
+            resp = "Si al simular te sale un impacto de '0.000%' o 'Despreciable', es porque estás simulando en una variable que tiene poco efecto cruzado en el sistema (como el Gini en el SpVAR). Intenta simular un shock en **Educación** o **PIB per cápita**, que son las variables que tienen los efectos más fuertes y notorios en la industria."
+        elif "escala" in m or "colores" in m or "leyenda" in m:
+            resp = "En los mapas, la leyenda de la derecha te da la escala. Si los números son de 2 a 8, significa que estás viendo el logaritmo de la industria (unidades logarítmicas). Si la escala es de -0.5 a 0.5, significa que estás viendo el **impacto porcentual** de una simulación. ¡Siempre revisa la leyenda para saber qué unidades estás viendo!"
+        elif "pesos" in m or "colombianos" in m or "miles de millones" in m:
+            resp = "Para facilitar la lectura, el modelo usa el **logaritmo del valor agregado** (en lugar de billones de pesos). Si quieres volver a la escala original, tendrías que aplicar la función exponencial (e^x). Pero en economía, usar logaritmos es el estándar porque nos permite hablar de porcentajes en lugar de cifras abrumadoras."    
         st.session_state.messages.append({"role": "assistant", "content": resp})
         with st.chat_message("assistant"): 
             st.markdown(resp)
