@@ -654,57 +654,70 @@ res = entrenar_modelos(gdf)
 gdf_ui = res["gdf_ui"]
 gdf_map = gdf_ui.to_crs(epsg=4326).copy()
 
-st.title("Modelo Espacial — Industria Manufacturera Departamental")
-st.markdown(f"**Especificación óptima:** {res['best_spec_name']} · **Y:** log_industria · **ρ:** {res['rho_ui']:.3f}")
+VAR_LABELS = {
+    "log_industria": "Nivel de Industria Manufacturera",
+    "gini": "Desigualdad (Índice Gini)",
+    "educacion_superior": "Cobertura en Educación Superior",
+    "log_pib_percapita": "Riqueza (PIB per cápita)"
+}
 
+# --- INTRODUCCIÓN Y CONTEXTO ---
+st.title("🗺️ Análisis Espacial de la Industria en Colombia")
+st.markdown("""
+### ¿De qué trata esta aplicación?
+Esta herramienta interactiva analiza cómo la geografía y los departamentos vecinos influyen en la **industria manufacturera** de Colombia. 
+Utilizando datos oficiales y modelos econométricos espaciales, puedes explorar si las regiones industriales están agrupadas, y simular cómo cambios en la educación, la desigualdad o la riqueza de un departamento "contagian" o afectan a todo el país.
+""")
+
+with st.expander("💡 Guía Rápida: ¿Cómo navegar por la app?", expanded=False):
+    st.markdown("""
+    - **Pestaña 1 (Diagnóstico):** Responde a la pregunta *¿Los departamentos se copian entre sí?*
+    - **Pestaña 2 (Mapas y LISA):** Muestra mapas de calor y agrupaciones de departamentos ricos/pobres.
+    - **Pestaña 3 (Simulador):** Te permite decir *"¿Qué pasa si mejoro la educación en Antioquia?"* y ver el efecto dominó en los vecinos.
+    - **Pestaña 4 (SpVAR):** Un modelo avanzado donde todo afecta a todo simultáneamente.
+    - **Pestaña 5 (Chatbot):** Pregúntale al asistente virtual cualquier duda teórica.
+    """)
+
+st.markdown("---")
 tabs = st.tabs(["1 · Diagnóstico", "2 · Mapas y LISA", "3 · Simulador espacial", "4 · SpVAR espacial", "5 · Chatbot & PDF"])
+
+# Crear una columna amigable para el UI con los nombres estandarizados
+gdf_ui["depto_ui"] = gdf_ui[NOMBRE_COL].str.title()
+dept_options = gdf_ui["depto_ui"].tolist()
 
 with tabs[0]:
     st.header("Diagnóstico del Modelo")
-    st.markdown("""
-    En esta sección evaluamos si existe dependencia espacial. En palabras simples: **¿El nivel de industrialización de un departamento se ve afectado por lo que pasa en los departamentos vecinos?**
-    """)
+    st.markdown("En esta sección evaluamos si existe dependencia espacial. En palabras simples: **¿El nivel de industrialización de un departamento se ve afectado por lo que pasa en los departamentos vecinos?**")
     
-    # Cálculos para las interpretaciones
     X_ols = sm.add_constant(gdf_ui[["gini", "educacion_superior", "log_pib_percapita"]].values)
     ols_fit = sm.OLS(gdf_ui["log_industria"].values, X_ols).fit()
     mi_resid = Moran(ols_fit.resid, res["w_ui"])
     LM_lag, LM_err = _lm_tests(ols_fit.resid, res["W_np"], gdf_ui["log_industria"].values, X_ols)
 
     df_diag = pd.DataFrame([
-        ["Moran's I (Y)", f"{res['mi_Y'].I:.4f}", f"p={res['mi_Y'].p_sim:.4f}"],
+        ["Moran's I (Variable Dependiente)", f"{res['mi_Y'].I:.4f}", f"p={res['mi_Y'].p_sim:.4f}"],
         ["Moran's I (Residuos MCO)", f"{mi_resid.I:.4f}", f"p={mi_resid.p_sim:.4f}"],
-        ["LM-Lag", f"{LM_lag:.2f}", "Sugiere contagio de Y (SAR)"],
-        ["LM-Error", f"{LM_err:.2f}", "Sugiere shocks omitidos (SEM)"],
-        ["Modelo (AIC)", res["best_spec_name"], f"AIC={res['best_model'].aic:.2f}"],
-        ["ρ (rho)", f"{res['rho_ui']:.4f}", "Contagio espacial de Y"],
-        ["λ (lambda)", f"{res['lambda_ui']:.4f}", "Correlación de errores"]
-    ], columns=["Métrica", "Valor", "Detalle"])
+        ["Prueba LM-Lag", f"{LM_lag:.2f}", "Sugiere contagio directo (Modelo SAR)"],
+        ["Prueba LM-Error", f"{LM_err:.2f}", "Sugiere shocks omitidos (Modelo SEM)"],
+        ["Modelo Ganador (AIC)", res["best_spec_name"], f"AIC={res['best_model'].aic:.2f}"],
+        ["Multiplicador Espacial (ρ)", f"{res['rho_ui']:.4f}", "Nivel de contagio entre vecinos"],
+        ["Error Espacial (λ)", f"{res['lambda_ui']:.4f}", "Correlación de shocks no observados"]
+    ], columns=["Métrica / Prueba", "Valor", "Interpretación rápida"])
+    
     st.dataframe(df_diag, use_container_width=True)
     
-    st.markdown("### Coeficientes del Modelo")
-    st.json(res["betas_dict"])
-
-    # EXPLICACIONES PARA NO ECONOMISTAS
-    with st.expander("💡 ¿Cómo interpretar estos resultados? (Para no economistas)"):
-        st.markdown(f"""
-        **Modelo seleccionado:** `{res['best_spec_name']}`
-        
-        - **El Test de Moran:** Imagina que quieres saber si las ciudades ricas están agrupadas. Si el valor de Moran es positivo y la probabilidad (p-value) es menor a 0.05, significa que **sí hay agrupación** (las regiones industriales están cerca de otras regiones industriales). Por eso usamos modelos espaciales y no una regresión normal.
-        - **Coeficiente ρ (rho) o λ (lambda):** Es el "efecto contagio". Si ρ es positivo, significa que si a tus departamentos vecinos les va bien en industria, a ti también te irá bien.
-        
-        **Lectura de Variables (Modelo Log-Log → Elasticidades):**
-        - **Gini:** Un aumento de 1% en la desigualdad reduce la industria en {res['betas_dict'].get('gini', 0):.2f}%.
-        - **Educación:** Un aumento de 1% en la cobertura de educación superior incrementa la industria en {res['betas_dict'].get('educacion_superior', 0):.2f}%.
-        - **Log PIB pc:** Un aumento de 1% en el PIB per cápita (riqueza) incrementa la industria en {res['betas_dict'].get('log_pib_percapita', 0):.2f}%.
-        """)
+    with st.expander("📊 Ver Coeficientes (Elasticidades) del Modelo"):
+        st.markdown("Estos números indican cuánto cambia la industria si cambia una variable, manteniendo todo lo demás constante.")
+        df_betas = pd.DataFrame(list(res["betas_dict"].items()), columns=["Variable", "Coeficiente"])
+        df_betas["Variable"] = df_betas["Variable"].map(lambda x: VAR_LABELS.get(x, x))
+        st.dataframe(df_betas, use_container_width=True)
 
 with tabs[1]:
-    st.header("Mapas y LISA")
+    st.header("Mapas y Clústeres Espaciales")
     st.markdown("Explora visualmente cómo se distribuyen las variables en Colombia y dónde hay clústeres (grupos) significativos.")
     col1, col2 = st.columns(2)
     with col1:
-        var_sel = st.selectbox("Variable a mapear", ["log_industria", "gini", "educacion_superior", "log_pib_percapita"], help="Selecciona qué variable quieres ver en el mapa de calor.")
+        var_sel = st.selectbox("Variable a mapear", ["log_industria", "gini", "educacion_superior", "log_pib_percapita"], format_func=lambda x: VAR_LABELS.get(x, x), help="Selecciona qué variable quieres ver en el mapa de calor.")
         st.plotly_chart(crear_choropleth(gdf_map, var_sel), use_container_width=True)
     with col2:
         st.subheader("Clústeres LISA")
@@ -714,23 +727,21 @@ with tabs[1]:
 with tabs[2]:
     st.header("Simulador de Spillovers (Efectos Derrame)")
     st.markdown("""
-    **¿Qué es un Spillover?** Imagina que lanzas una piedra a un estanque. El impacto principal es donde cae la piedra (el departamento de origen), pero las ondas se expanden a los alrededores (los departamentos vecinos). Aquí puedes simular cómo un cambio en una variable (ej. mejorar la educación) en un departamento afecta al resto del país.
+    **¿Qué es un Spillover?** Imagina que lanzas una piedra a un estanque. El impacto principal es donde cae la piedra (el departamento de origen), pero las ondas se expanden a los alrededores (los departamentos vecinos). Aquí puedes simular cómo un cambio en una variable afecta a todo el país.
     """)
     
     col_ctrl, col_viz = st.columns([1, 2])
     with col_ctrl:
         st.markdown("### ⚙️ Configura tu simulación")
-        sim_dept = st.selectbox("Departamento origen (¿Dónde cae la piedra?)", gdf_ui[NOMBRE_COL].tolist(), key="sim_dept", help="El departamento que recibirá el shock inicial.")
-        sim_gini = st.slider("Δ Gini (Desigualdad)", -0.1, 0.1, 0.0, step=0.005, key="sim_gini", help="Cambia la desigualdad. Valor negativo = menor desigualdad. Positivo = mayor desigualdad.")
-        sim_edu = st.slider("Δ Educación", -0.1, 0.1, 0.0, step=0.005, key="sim_edu", help="Aumenta o reduce la cobertura de educación superior (ej. 0.05 = +5%).")
-        sim_pib = st.slider("Δ PIB per cápita (%)", -0.2, 0.2, 0.05, step=0.01, key="sim_pib", help="Simula un crecimiento (positivo) o una recesión (negativo) económica.")
-        sim_rho = st.slider("ρ (Multiplicador de contagio)", -0.9, 0.9, res["rho_fallback"], step=0.01, key="sim_rho", help="Qué tanto se propaga el efecto por los departamentos vecinos. Más alto = más contagio.")
-        sim_var = st.selectbox("Variable a visualizar en el mapa", ["combined", "gini", "educacion_superior", "log_pib_percapita"], key="sim_var", help="Puedes ver el efecto combinado de todas las variables, o el efecto aislado de una sola.")
+        sim_dept = st.selectbox("Departamento origen (¿Dónde cae la piedra?)", dept_options, key="sim_dept", help="El departamento que recibirá el shock inicial.")
+        sim_gini = st.slider("Cambio en Desigualdad (Gini)", -0.1, 0.1, 0.0, step=0.005, key="sim_gini", help="Valor negativo = menor desigualdad. Positivo = mayor desigualdad.")
+        sim_edu = st.slider("Cambio en Educación", -0.1, 0.1, 0.0, step=0.005, key="sim_edu", help="Aumenta o reduce la cobertura de educación superior (ej. 0.05 = +5%).")
+        sim_pib = st.slider("Cambio en Riqueza (PIB pc %)", -0.2, 0.2, 0.05, step=0.01, key="sim_pib", help="Simula un crecimiento (positivo) o una recesión (negativo) económica.")
+        sim_rho = st.slider("Multiplicador de contagio (ρ)", -0.9, 0.9, res["rho_fallback"], step=0.01, key="sim_rho", help="Qué tanto se propaga el efecto por los departamentos vecinos. Más alto = más contagio.")
+        sim_var = st.selectbox("Variable a visualizar en el mapa", ["combined", "gini", "educacion_superior", "log_pib_percapita"], format_func=lambda x: "Todos los efectos combinados" if x == "combined" else VAR_LABELS.get(x, x), key="sim_var", help="Puedes ver el efecto combinado de todas las variables, o el efecto aislado de una sola.")
         
-        # BOTÓN PARA GENERAR LA SIMULACIÓN
         if st.button("🚀 Generar Simulación", type="primary", use_container_width=True):
             with st.spinner("Calculando impactos espaciales..."):
-                # Guardamos los resultados en session_state para que no se borren
                 st.session_state.sim2_png = create_propagation_png(gdf_map, res["w_ui"], res["betas_dict"], res["rho_fallback"], sim_dept, sim_var, sim_gini, sim_edu, sim_pib, sim_rho)
                 st.session_state.sim2_bar, st.session_state.sim2_irf = plot_simulacion(gdf_map, res["w_ui"], res["betas_dict"], res["rho_fallback"], sim_dept, sim_gini, sim_edu, sim_pib, sim_rho)
                 st.session_state.sim2_params = {"dept": sim_dept, "gini": sim_gini, "edu": sim_edu, "pib": sim_pib, "rho": sim_rho}
@@ -742,9 +753,7 @@ with tabs[2]:
             st.plotly_chart(st.session_state.sim2_bar, use_container_width=True)
             st.plotly_chart(st.session_state.sim2_irf, use_container_width=True)
             
-            # INTERPRETACIÓN
             p = st.session_state.sim2_params
-            idx = gdf_ui[gdf_ui[NOMBRE_COL] == p['dept']].index[0]
             rho_eff = float(np.clip(p['rho'], -0.9, 0.9))
             shock_local = res['betas_dict'].get('gini', 0)*p['gini'] + res['betas_dict'].get('educacion_superior', 0)*p['edu'] + res['betas_dict'].get('log_pib_percapita', 0)*p['pib']
             
@@ -759,43 +768,56 @@ with tabs[2]:
 with tabs[3]:
     st.header("SpVAR Espacial (Sistema de Ecuaciones Simultáneas)")
     st.markdown("""
-    Este es un modelo avanzado donde **todo afecta a todo**. La industria, el Gini, la educación y el PIB interactúan entre sí y, además, se contagian geográficamente. Aquí puedes simular un shock en una variable y ver cómo reacciona todo el sistema económico del país.
+    Este es un modelo avanzado donde **todo afecta a todo**. La industria, la desigualdad, la educación y la riqueza interactúan entre sí y se contagian geográficamente. Aquí puedes simular un shock en una variable y ver cómo reacciona todo el sistema económico del país.
     """)
     
     st.markdown("### 1. Matrices de Spillover (Descomposición de LeSage-Pace)")
     with st.expander("💡 ¿Cómo leer estas matrices complejas?"):
         st.markdown("""
-        - **Las Filas** son la variable que recibe el efecto (Respuesta).
-        - **Las Columnas** son la variable que origina el shock (Impulso).
-        - **Matriz Directa:** Mide el impacto de un shock sobre sí mismo (efecto local).
-        - **Matriz Indirecta (Derrame):** Mide cómo el shock afecta a los *vecinos*. (Ej: Cómo un choque en la educación de los vecinos afecta mi industria local).
-        - **Matriz Total:** El resultado final en el sistema (Directo + Indirecto).
+        - **Filas (Respuesta):** La variable que recibe el efecto.
+        - **Columnas (Impulso):** La variable que origina el shock.
+        - **Matriz Directa:** Impacto local (ej. cómo un cambio en la educación de un depto afecta su propia industria).
+        - **Matriz Indirecta (Derrame):** Impacto en los vecinos (ej. cómo la educación de los vecinos afecta mi industria).
+        - **Matriz Total:** El resultado final (Directo + Indirecto).
         """)
     
+    spvar_vars_short = [VAR_LABELS.get(v, v) for v in res["SPVAR_VARS"]]
+    
+    df_direct_ui = res["df_direct"].copy()
+    df_direct_ui.index = [f"Respuesta: {v}" for v in spvar_vars_short]
+    df_direct_ui.columns = [f"Impulso: {v}" for v in spvar_vars_short]
+    
+    df_indirect_ui = res["df_indirect"].copy()
+    df_indirect_ui.index = [f"Respuesta: {v}" for v in spvar_vars_short]
+    df_indirect_ui.columns = [f"Impulso: {v}" for v in spvar_vars_short]
+    
+    df_total_ui = res["df_total"].copy()
+    df_total_ui.index = [f"Respuesta: {v}" for v in spvar_vars_short]
+    df_total_ui.columns = [f"Impulso: {v}" for v in spvar_vars_short]
+
     col_m1, col_m2, col_m3 = st.columns(3)
-    with col_m1: st.write("**Directos (Local)**"); st.dataframe(res["df_direct"].round(3))
-    with col_m2: st.write("**Indirectos (Spillover)**"); st.dataframe(res["df_indirect"].round(3))
-    with col_m3: st.write("**Totales (Sistémicos)**"); st.dataframe(res["df_total"].round(3))
+    with col_m1: st.write("**Directos (Efecto Local)**"); st.dataframe(df_direct_ui.round(3))
+    with col_m2: st.write("**Indirectos (Derrame a Vecinos)**"); st.dataframe(df_indirect_ui.round(3))
+    with col_m3: st.write("**Totales (Efecto Sistémico)**"); st.dataframe(df_total_ui.round(3))
 
     st.markdown("---")
     st.subheader("2. Simulador de Shock Sistémico")
     col_s1, col_s2 = st.columns([1, 2])
     with col_s1:
         st.markdown("### ⚙️ Configura tu shock")
-        spvar_shock_var = st.selectbox("Variable a impactar (Shock)", res["SPVAR_VARS"], key="spvar_var", help="¿Qué variable va a cambiar primero?")
-        spvar_shock_dept = st.selectbox("Departamento de origen", gdf_ui[NOMBRE_COL].tolist(), key="spvar_dept", help="¿Dónde inicia el impacto?")
+        spvar_shock_var = st.selectbox("Variable a impactar (Shock)", res["SPVAR_VARS"], format_func=lambda x: VAR_LABELS.get(x, x), key="spvar_var", help="¿Qué variable va a cambiar primero?")
+        spvar_shock_dept = st.selectbox("Departamento de origen", dept_options, key="spvar_dept", help="¿Dónde inicia el impacto?")
         spvar_shock_size = st.slider("Intensidad del Shock", -0.30, 0.30, 0.10, step=0.01, key="spvar_size", help="Positivo = Auge / Mejora. Negativo = Crisis / Recorte.")
-        spvar_target_var = st.selectbox("Variable a mapear en el mapa", res["SPVAR_VARS"] + ["all"], key="spvar_target", help="Puedes ver cómo se afecta la misma variable del shock, otra variable, o todas (cuadrícula).")
+        spvar_target_var = st.selectbox("Variable a mapear en el mapa", res["SPVAR_VARS"] + ["all"], format_func=lambda x: "Todas las variables (Cuadrícula)" if x == "all" else VAR_LABELS.get(x, x), key="spvar_target", help="Puedes ver cómo se afecta la misma variable del shock, otra variable, o todas.")
         
-        # BOTÓN PARA GENERAR LA SIMULACIÓN SPVAR
         if st.button("🚀 Generar Simulación SpVAR", type="primary", use_container_width=True):
-            with st.spinner("Calculando propagación del sistema completo (Matriz 132x132)..."):
-                idx_spvar = gdf_ui[gdf_ui[NOMBRE_COL] == spvar_shock_dept].index[0]
+            with st.spinner("Calculando propagación del sistema completo..."):
+                idx_spvar = gdf_ui[gdf_ui["depto_ui"] == spvar_shock_dept].index[0]
                 tv = None if spvar_target_var == "all" else spvar_target_var
                 
                 st.session_state.spvar_png = create_spvar_propagation_png(gdf_map, res["A_system"], res["S_system"], res["K_spvar"], len(gdf_ui), res["SPVAR_VARS"], spvar_shock_var, idx_spvar, spvar_shock_size, tv)
-                st.session_state.spvar_hm = plot_spvar_espacial_heatmap(res["A_system"], res["S_system"], res["K_spvar"], len(gdf_ui), res["SPVAR_VARS"], gdf_ui[NOMBRE_COL].tolist(), spvar_shock_var, idx_spvar, spvar_shock_size)
-                st.session_state.spvar_irf = plot_spvar_by_order(res["A_system"], res["S_system"], res["K_spvar"], len(gdf_ui), res["SPVAR_VARS"], gdf_ui[NOMBRE_COL].tolist(), res["W_np"], spvar_shock_var, idx_spvar, spvar_shock_size, 8)
+                st.session_state.spvar_hm = plot_spvar_espacial_heatmap(res["A_system"], res["S_system"], res["K_spvar"], len(gdf_ui), res["SPVAR_VARS"], dept_options, spvar_shock_var, idx_spvar, spvar_shock_size)
+                st.session_state.spvar_irf = plot_spvar_by_order(res["A_system"], res["S_system"], res["K_spvar"], len(gdf_ui), res["SPVAR_VARS"], dept_options, res["W_np"], spvar_shock_var, idx_spvar, spvar_shock_size, 8)
                 st.session_state.spvar_info = {"var": spvar_shock_var, "dept": spvar_shock_dept, "size": spvar_shock_size}
 
     with col_s2:
@@ -805,41 +827,59 @@ with tabs[3]:
             st.plotly_chart(st.session_state.spvar_hm, use_container_width=True)
             st.plotly_chart(st.session_state.spvar_irf, use_container_width=True)
             
-            # INTERPRETACIÓN
             info = st.session_state.spvar_info
+            var_lbl = VAR_LABELS.get(info['var'], info['var'])
             st.info(f"""
             **Análisis del Shock Sistémico:**
-            - **Mapa de Propagación:** Un shock de {info['size']*100:+.0f}% en **{info['var']}** desde **{info['dept']}** genera estas ondas geográficas.
-            - **Heatmap K×N:** Esta gráfica muestra cómo las 4 variables (Industria, Gini, Educación, PIB) reaccionan en TODOS los departamentos. Un punto rojo oscuro significa que esa variable subió fuertemente; un punto azul significa que bajó (crisis).
-            - **IRF Espacial (Impulso-Respuesta):** Mide la persistencia. La línea roja es el origen. Si la línea azul (vecinos) o verde (promedio nacional) sube en los primeros pasos, significa que el contagio está funcionando.
+            - **Mapa de Propagación:** Un shock de {info['size']*100:+.0f}% en **{var_lbl}** desde **{info['dept']}** genera estas ondas geográficas.
+            - **Heatmap K×N:** Muestra cómo las 4 variables reaccionan en TODOS los departamentos. Rojo oscuro = subió fuertemente; azul = bajó (crisis).
+            - **IRF Espacial (Impulso-Respuesta):** Mide la persistencia. Si la línea azul (vecinos) o verde (promedio nacional) sube en los primeros pasos, significa que el contagio está funcionando.
             """)
         else:
             st.info("👈 Ajusta los parámetros a la izquierda y presiona **'Generar Simulación SpVAR'** para calcular el impacto sistémico.")
 
 with tabs[4]:
-    st.header("Chatbot y Reporte PDF")
-    st.markdown("Consulta dudas rápidas sobre el modelo o descarga un reporte formal.")
+    st.header("Chatbot Educativo y Reporte PDF")
     
-    # Chatbot simple
-    st.subheader("Chatbot de Ayuda")
+    # --- CHATBOT EXPANDIDO ---
+    st.subheader("Asistente de Econometría Espacial")
+    st.markdown("Pregúntame sobre conceptos como Moran, SAR, Gini, Spillovers, etc. Te explicaré de forma sencilla.")
+    
     if "messages" not in st.session_state:
         st.session_state.messages = []
+
     for message in st.session_state.messages:
         with st.chat_message(message["role"]): st.markdown(message["content"])
-    if prompt := st.chat_input("Pregunta sobre Moran, SAR, impactos, etc..."):
+        
+    if prompt := st.chat_input("Ej: ¿Qué es el test de Moran? o ¿Qué significa un SAR?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"): st.markdown(prompt)
+        
         m = prompt.lower()
-        if "moran" in m: resp = f"Moran's I sobre Y = {res['mi_Y'].I:.3f} (p={res['mi_Y'].p_sim:.3f}). Valores positivos indican agrupación espacial."
-        elif "rho" in m: resp = f"ρ actual = {res['rho_ui']:.3f}. Si ρ>0, los shocks se amplifican espacialmente."
-        elif "sar" in m: resp = "SAR: Y = ρWY + Xβ + ε. ρ mide contagio de la Y de vecinos."
-        elif "sem" in m: resp = "SEM: Y = Xβ + u, u = λWu + ε. La dependencia está en los errores."
-        elif "sdm" in m: resp = "SDM: Y = ρWY + Xβ + WXθ + ε. Combina lag de Y y de X."
-        elif "lisa" in m: resp = "LISA: Muestra clústeres locales. HH = Alto rodeado de Altos; LL = Bajos rodeados de Bajos."
-        else: resp = "Pregunta por: Moran, SAR, SEM, SDM, ρ, impactos, spillovers, LISA o IRF."
+        if "moran" in m:
+            resp = "El **Índice de Moran (Moran's I)** es una medida estadística que nos dice si los datos están agrupados geográficamente o dispersos. Imagina un mapa de Colombia: si los departamentos con alta industria están todos juntos en el centro, Moran será positivo. Si están dispersos aleatoriamente, Moran será cercano a cero. En tu modelo, lo usamos para demostrar que la geografía SÍ importa en la industria."
+        elif "sar" in m:
+            resp = "El **Modelo SAR (Spatial Autoregressive)** se usa cuando el nivel de industria de un departamento depende DIRECTAMENTE del nivel de industria de sus vecinos. En palabras simples, asume que 'si a mis vecinos les va bien, a mí también me irá bien'. Matemáticamente se ve como `Y = ρWY + Xβ`, donde el término `WY` es el efecto de los vecinos y `ρ` es el nivel de contagio."
+        elif "sem" in m:
+            resp = "El **Modelo SEM (Spatial Error Model)** es diferente al SAR. Aquí no es que la industria de los vecinos te afecte directamente, sino que hay 'shocks' o errores no observados (como una política regional, un clima extremo o una crisis) que afectan a toda una zona geográfica al mismo tiempo. Por eso se dice que el contagio está en el 'error' o en lo no observado."
+        elif "sdm" in m:
+            resp = "El **Modelo SDM (Spatial Durbin Model)** es el más completo. Combina el SAR y el SEM. Asume que tu industria depende de la industria de tus vecinos, PERO TAMBIÉN de las características de tus vecinos (como su nivel de educación o su riqueza). Es como decir: 'me afecta que mi vecino produzca mucho, pero también me afecta que mi vecino sea muy educado o muy rico'."
+        elif "rho" in m or "ρ" in m:
+            resp = f"El **coeficiente ρ (rho)** es el 'multiplicador de contagio espacial'. En tu modelo actual es **{res['rho_ui']:.3f}**. Si es positivo y alto, significa que un shock económico en un departamento no se queda ahí, sino que se amplifica y se esparce a los vecinos, creando un efecto dominó regional."
+        elif "gini" in m:
+            resp = "El **Índice de Gini** mide la desigualdad de ingresos. Va de 0 (todos ganan lo mismo) a 1 (una persona gana todo). En tu modelo, sirve para ver si la desigualdad frena la industria. Si el coeficiente es negativo, significa que a mayor desigualdad, menor desarrollo industrial."
+        elif "lisa" in m:
+            resp = "**LISA (Local Indicators of Spatial Association)** es una técnica que descompone el mapa para encontrar 'puntos calientes'. En lugar de darnos un solo número para todo el país, nos dice dónde exactamente están los clústeres. Por ejemplo, el clúster 'HH' (Alto-Alto) significa que hay un grupo de departamentos muy industrializados rodeados de otros igual de industrializados (como el centro del país)."
+        elif "spillover" in m or "derrame" in m:
+            resp = "Un **Spillover (o efecto derrame)** ocurre cuando el cambio en una variable (ej. mejorar la educación en Antioquia) no solo afecta a Antioquia, sino que 'se derrama' a los departamentos vecinos. Es el concepto central de esta app. La Pestaña 3 te permite simular exactamente esto visualmente con flechas."
+        else:
+            resp = "¡Buena pregunta! Para conceptos espaciales te recomiendo preguntarme por: **Moran, SAR, SEM, SDM, Rho, Gini, LISA o Spillovers**. Si quieres saber sobre un departamento específico, ¡ve a la Pestaña 3 y usa el simulador!"
+            
         st.session_state.messages.append({"role": "assistant", "content": resp})
         with st.chat_message("assistant"): st.markdown(resp)
 
+    # --- REPORTE PDF ---
+    st.markdown("---")
     st.subheader("Reporte PDF")
     st.write("Genera un documento formal con los resultados de la estimación principal.")
     if st.button("Generar PDF"):
@@ -859,4 +899,5 @@ with tabs[4]:
         story.append(Paragraph(f"Especificación: {res['best_spec_name']} · ρ = {res['rho_ui']:.3f}", st_style["Normal"]))
         doc.build(story)
         buf.seek(0)
+        st.download_button("⬇️ Descargar PDF", data=buf.getvalue(), file_name="reporte_econometria.pdf", mime="application/pdf")
         st.download_button("⬇️ Descargar PDF", data=buf.getvalue(), file_name="reporte_econometria.pdf", mime="application/pdf")
