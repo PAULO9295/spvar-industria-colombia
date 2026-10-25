@@ -103,6 +103,8 @@ def leer_excel_drive(file_id, sheet_name, header=None):
 # ==========================================
 @st.cache_data(show_spinner="Cargando datos y construyendo variables...")
 def cargar_datos():
+    import re
+
     # --- 1. GEOMETRÍA ---
     gdf_geo = gpd.read_file(URL_GEOMETRIA)
     rename = {}
@@ -118,60 +120,60 @@ def cargar_datos():
     gdf_geo[NOMBRE_COL] = gdf_geo[NOMBRE_COL].apply(normalizar_nombre_depto)
     gdf_geo = gdf_geo[[COD_DANE_COL, NOMBRE_COL, "geometry"]]
 
-    # --- FUNCIÓN DE EXTRACCIÓN (Lógica exacta de Colab) ---
+    # --- FUNCIÓN MAESTRA (Búsqueda inteligente) ---
     def extraer_datos_excel(file_id, sheet_name, es_industria=False):
         df_raw = leer_excel_drive(file_id, sheet_name=sheet_name, header=None)
-        header_idx = None
-
-        if es_industria:
-            titulo_idx = None
-            for i in range(len(df_raw)):
-                cell0 = str(df_raw.iloc[i, 0]) if pd.notna(df_raw.iloc[i, 0]) else ""
-                if "Industrias manufactureras" in cell0 or "Industria manufacturera" in cell0:
-                    titulo_idx = i
-                    break
-            if titulo_idx is not None:
-                for i in range(titulo_idx + 1, min(titulo_idx + 15, len(df_raw))):
-                    # Usamos map(str, ...) para evitar el TypeError
-                    row_str = " ".join(map(str, df_raw.iloc[i].values)).upper()
-                    # Buscamos "DEPARTAMENTOS" (plural) y años viejos (como en tu Colab)
-                    if "DEPARTAMENTOS" in row_str and ("2005" in row_str or "2010" in row_str):
-                        header_idx = i
-                        break
-        else:
-            for i in range(min(15, len(df_raw))):
-                row_str = " ".join(map(str, df_raw.iloc[i].values)).upper()
-                # Lógica original de Colab para PIB
-                if "DEPARTAMENTOS" in row_str and ("2005" in row_str or "2010" in row_str):
-                    header_idx = i
-                    break
-                # Lógica original de Colab para Educación
-                if "DEPARTAMENTO" in row_str and ("2015" in row_str or "2018" in row_str or "2020" in row_str):
-                    header_idx = i
-                    break
-
-        if header_idx is None:
-            raise ValueError(f"No se encontró el encabezado real en {sheet_name}. Revisa el formato del Excel.")
-
+        
+        # BÚSQUEDA INFALIBLE: Encontrar la fila con más años (2000-2030)
+        best_row_idx = 0
+        max_years = 0
+        
+        for i in range(min(40, len(df_raw))): # Revisar las primeras 40 filas
+            row_vals = df_raw.iloc[i].values
+            years_found = 0
+            for val in row_vals:
+                try:
+                    val_str = str(val).replace(".0", "").strip()
+                    if val_str.isdigit() and 2000 <= int(val_str) <= 2030:
+                        years_found += 1
+                    elif any(str(y) in val_str for y in range(2000, 2030)):
+                        years_found += 1
+                except:
+                    pass
+            
+            if years_found > max_years:
+                max_years = years_found
+                best_row_idx = i
+                
+        if max_years < 3:
+            raise ValueError(f"No se pudo encontrar la fila de años en {sheet_name}.")
+            
+        header_idx = best_row_idx
         headers = [str(h).strip() if pd.notna(h) else f"col_{j}" for j, h in enumerate(df_raw.iloc[header_idx].tolist())]
         
-        # Extracción de año (Lógica original de Colab)
+        # Extracción de la columna del año
         year_pos = {}
         for j, c in enumerate(headers):
-            if j < 2: continue
-            c_clean = str(c).replace("p", "").replace("r", "").replace(".0", "").strip()
-            try:
-                y = int(float(c_clean))
+            match = re.search(r'(20\d{2})', str(c))
+            if match:
+                y = int(match.group(1))
                 if 2000 <= y <= 2030 and y not in year_pos:
                     year_pos[y] = j
-            except Exception:
-                pass
 
-        anios = sorted(year_pos.keys())
-        if not anios:
-            raise ValueError(f"No se encontraron años válidos en el encabezado de {sheet_name}")
+        if not year_pos:
+            # Si los años estaban como números puros y no como texto
+            for j, c in enumerate(headers):
+                try:
+                    y = int(float(c))
+                    if 2000 <= y <= 2030 and y not in year_pos:
+                        year_pos[y] = j
+                except:
+                    pass
+                    
+        if not year_pos:
+            raise ValueError(f"Fila encontrada, pero no se leyeron años válidos en {sheet_name}.")
             
-        anio_usado = min(anios, key=lambda y: abs(y - 2019))
+        anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
         pos_anio = year_pos[anio_usado]
 
         nombres = df_raw.iloc[header_idx+1:, 1]
