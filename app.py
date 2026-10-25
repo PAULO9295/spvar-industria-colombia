@@ -862,11 +862,13 @@ with tabs[4]:
         st.session_state.messages = []
 
     for message in st.session_state.messages:
-        with st.chat_message(message["role"]): st.markdown(message["content"])
+        with st.chat_message(message["role"]): 
+            st.markdown(message["content"])
         
-       if prompt := st.chat_input("Ej: ¿Qué es la matriz W? o ¿Por qué la desigualdad afecta la industria?"):
+    if prompt := st.chat_input("Ej: ¿Qué es la matriz W? o ¿Por qué la desigualdad afecta la industria?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.markdown(prompt)
+        with st.chat_message("user"): 
+            st.markdown(prompt)
         
         m = prompt.lower()
         
@@ -897,8 +899,6 @@ with tabs[4]:
             resp = "El **SpVAR Espacial** es un modelo avanzado (Pestaña 4) que estima un sistema de ecuaciones simultáneas. Asume que la industria, la desigualdad, la educación y la riqueza no solo dependen de sí mismas en el pasado, sino que **se afectan mutuamente** y se contagian espacialmente. Permite ver cómo un shock en una variable afecta a todas las demás."
         elif "matriz" in m or "lesage" in m or "pace" in m:
             resp = "Las **Matrices de LeSage-Pace** (en la Pestaña 4) descomponen los impactos de un shock. Muestran en las filas a la variable que recibe el efecto, y en las columnas a la variable que lo origina. Nos dicen si el efecto es Directo (local), Indirecto (vecinos) o Total (sistémico)."
-        
-        # --- NUEVAS RESPUESTAS (METODOLOGÍA Y GRÁFICOS) ---
         elif "matriz w" in m or "pesos" in m or "vecinos" in m:
             resp = "La **Matriz W (Matriz de Pesos Espaciales)** es la forma en que la computadora entiende la geografía. Básicamente, es un mapa que define quién es 'vecino' de quién. En tu modelo se usó el criterio de 'K-Vecinos más cercanos' (KNN), lo que significa que cada departamento está conectado con sus 4 o 5 vecinos geográficamente más próximos."
         elif "log" in m or "logaritmo" in m or "log-log" in m:
@@ -913,8 +913,6 @@ with tabs[4]:
             resp = "**MCO (Mínimos Cuadrados Ordinarios)** es el modelo estadístico tradicional. Se usa como punto de partida, pero tiene una falla: asume que cada departamento es independiente. En geografía, eso es falso (lo que pasa en Cundinamarca afecta a Bogotá). Por eso usamos modelos espaciales (SAR, SEM) que superan esta limitación."
         elif "aic" in m:
             resp = "El **AIC (Criterio de Información de Akaike)** es una medida de la calidad del modelo estadístico. Cuanto **menor** sea el valor, mejor es el modelo (porque se ajusta bien a los datos sin ser innecesariamente complejo). Tu app eligió el modelo actual porque tenía el AIC más bajo entre todas las opciones."
-
-        # --- NUEVAS RESPUESTAS (ECONOMÍA Y DATOS) ---
         elif "gini" in m or "desigualdad" in m:
             resp = f"El **Índice de Gini** mide la desigualdad de ingresos (0 = igualdad total, 1 = desigualdad total). En tu modelo, el coeficiente es {res['betas_dict'].get('gini', 0):.2f}. Un valor negativo indica que a mayor desigualdad, menor es el nivel de industria. ¿Por qué? Porque la desigualdad reduce el mercado interno (la gente no puede comprar productos) y genera inestabilidad social que ahuyenta la inversión."
         elif "educacion" in m or "capital humano" in m:
@@ -925,16 +923,36 @@ with tabs[4]:
             resp = "Bogotá, Antioquia y Valle del Cauca son los departamentos con mayor industria. Esto se debe a su historia de desarrollo, concentración de infraestructura, acceso a puertos (en el caso del Valle) y alta densidad poblacional. Por eso aparecen con colores fuertes (rojos) en los mapas de calor."
         elif "andina" in m or "centro" in m:
             resp = "La **Región Andina** (centro de Colombia: Bogotá, Cundinamarca, Boyacá, Santander) es el corazón industrial del país. En los mapas LISA, verás un gran clúster rojo (HH - Alto-Alto) allí porque son regiones industrializadas rodeadas de otras igual de industrializadas, lo que genera una sinergia productiva muy fuerte."
-
-        # --- NUEVAS RESPUESTAS (USO DE LA APP) ---
         elif "como" in m or "ayuda" in m or "usar" in m or "simular" in m:
             resp = "¡Es fácil! Ve a la **Pestaña 3** o **Pestaña 4**. Selecciona un departamento, mueve los sliders (por ejemplo, aumenta la educación un 5%) y presiona el botón 'Generar Simulación'. Verás cómo el mapa te muestra si esa mejora contagia a los vecinos o no. No necesitas saber programar, solo explorar."
         elif "por que" in m or "porque" in m:
             resp = "Las relaciones espaciales existen porque la economía no es una isla. Las empresas se aglomeran cerca de otras empresas (economías de escala), los trabajadores viajan entre departamentos vecinos, y las crisis o bonanzas se contagian por el comercio regional. La econometría espacial intenta capturar exactamente eso."
-
-        # --- RESPUESTA POR DEFECTO ---
         else:
             resp = "¡Interesante pregunta! Aún estoy aprendiendo. Intenta preguntarme sobre:\n- **Modelos:** SAR, SEM, SDM, SpVAR, MCO\n- **Geografía:** Matriz W, LISA, Región Andina\n- **Resultados:** Rho, Lambda, Elasticidades, AIC\n- **Gráficos:** Flechas, Mapa de calor, IRF\n- **Economía:** Gini, Educación, PIB\n- **Uso:** ¿Cómo simular?"
             
         st.session_state.messages.append({"role": "assistant", "content": resp})
-        with st.chat_message("assistant"): st.markdown(resp)
+        with st.chat_message("assistant"): 
+            st.markdown(resp)
+
+    # --- REPORTE PDF ---
+    st.markdown("---")
+    st.subheader("Reporte PDF")
+    st.write("Genera un documento formal con los resultados de la estimación principal.")
+    if st.button("Generar PDF"):
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import cm
+        from reportlab.lib.enums import TA_CENTER
+
+        buf = BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4)
+        st_style = getSampleStyleSheet()
+        title_s = ParagraphStyle("T", parent=st_style["Heading1"], alignment=TA_CENTER)
+        
+        story = [Paragraph("Reporte — Modelo Espacial de Industria", title_s), Spacer(1, 0.5*cm)]
+        story.append(Paragraph(f"Especificación: {res['best_spec_name']} · ρ = {res['rho_ui']:.3f}", st_style["Normal"]))
+        doc.build(story)
+        buf.seek(0)
+        st.download_button("⬇️ Descargar PDF", data=buf.getvalue(), file_name="reporte_econometria.pdf", mime="application/pdf")
