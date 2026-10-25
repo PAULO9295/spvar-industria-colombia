@@ -467,32 +467,50 @@ def create_propagation_png(gdf_map, w_ui, betas_dict, rho_fallback, dept_name, m
     impact_pct = impacts[key]
     rho_eff = impacts["_rho"]
 
+    # Limpiar NaNs o Inf por si acaso
+    impact_pct = np.nan_to_num(impact_pct, nan=0.0, posinf=0.0, neginf=0.0)
+    abs_imp = np.abs(impact_pct)
+    max_abs = float(abs_imp.max())
+
+    # Función para formatear números de forma inteligente
+    def _fmt(val):
+        if abs(val) >= 0.01: return f"{val:+.3f}%"
+        elif abs(val) >= 0.0001: return f"{val:+.5f}%"
+        elif abs(val) > 1e-8: return f"{val:+.2e}%"
+        return "~0.00%"
+
     gdf_plot = gdf_map.copy()
     gdf_plot["impact"] = impact_pct
-    abs_imp = np.abs(impact_pct)
-    max_abs = float(abs_imp.max()) if abs_imp.max() > 1e-6 else 1e-6
-    order = np.argsort(abs_imp)[::-1]
-    top_idx = [i for i in order if i != idx and abs_imp[i] > max_abs * 0.02][:14]
-    centroids = _MAP_CACHE["centroids"]
-    ox, oy = centroids[idx]
-
+    
     fig, ax = plt.subplots(figsize=(10, 8.5), dpi=110)
-    gdf_plot.plot(column="impact", ax=ax, cmap="RdBu_r", vmin=-max_abs, vmax=max_abs, edgecolor="#0d0d0d", linewidth=1.0, legend=True, legend_kwds={"shrink": 0.6})
 
-    for rank, dest in enumerate(top_idx):
-        dx_, dy_ = centroids[dest]
-        color = "#d92d2d" if impact_pct[dest] > 0 else "#3360dc"
-        lw = 1.2 + 4.5 * (abs_imp[dest] / max_abs)
-        ax.add_patch(FancyArrowPatch((ox, oy), (dx_, dy_), arrowstyle="-|>", mutation_scale=14 + 12 * (abs_imp[dest] / max_abs), color=color, alpha=0.78, linewidth=lw, shrinkA=8, shrinkB=6, zorder=5))
-        if rank < 6:
-            ax.annotate(f"{impact_pct[dest]:+.2f}%", xy=(dx_, dy_), xytext=(dx_, dy_ + 0.45), fontsize=8, fontweight="bold", color="#111", ha="center", va="bottom", bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="#888", lw=0.4, alpha=0.85), zorder=8)
+    # Si el impacto máximo es microscópico, no dibujamos flechas ni gradiente
+    if max_abs < 1e-5:
+        gdf_plot.plot(color="#e0e0e0", ax=ax, edgecolor="#0d0d0d", linewidth=1.0)
+        ax.set_title(f"Propagación espacial — {key}\nOrigen: {dept_name}  ·  ρ = {rho_eff:.3f}\nImpacto nulo o despreciable (< 0.001%)", fontsize=10, fontweight="bold")
+    else:
+        order = np.argsort(abs_imp)[::-1]
+        # Umbral más estricto: solo flechas si superan el 10% del impacto máximo
+        top_idx = [i for i in order if i != idx and abs_imp[i] > max_abs * 0.10][:14]
+        centroids = _MAP_CACHE["centroids"]
+        ox, oy = centroids[idx]
 
-    ax.add_patch(Circle((ox, oy), 0.9, color="gold", alpha=0.22, zorder=6))
-    ax.plot(ox, oy, marker="*", markersize=22, color="#FFD700", markeredgecolor="#222", markeredgewidth=1.2, zorder=9)
-    ax.annotate(f"⭐ {dept_name}", xy=(ox, oy + 1.05), fontsize=9, fontweight="bold", ha="center", bbox=dict(boxstyle="round,pad=0.25", fc="lightyellow", ec="#B8860B", lw=0.8), zorder=10)
-    ax.set_title(f"Propagación espacial — {key}\nOrigen: {dept_name}  ·  ρ = {rho_eff:.3f}", fontsize=10, fontweight="bold")
+        gdf_plot.plot(column="impact", ax=ax, cmap="RdBu_r", vmin=-max_abs, vmax=max_abs, edgecolor="#0d0d0d", linewidth=1.0, legend=True, legend_kwds={"shrink": 0.6, "format": "%.5f"})
+
+        for rank, dest in enumerate(top_idx):
+            dx_, dy_ = centroids[dest]
+            color = "#d92d2d" if impact_pct[dest] > 0 else "#3360dc"
+            lw = 1.2 + 4.5 * (abs_imp[dest] / max_abs)
+            ax.add_patch(FancyArrowPatch((ox, oy), (dx_, dy_), arrowstyle="-|>", mutation_scale=14 + 12 * (abs_imp[dest] / max_abs), color=color, alpha=0.78, linewidth=lw, shrinkA=8, shrinkB=6, zorder=5))
+            if rank < 6:
+                ax.annotate(_fmt(impact_pct[dest]), xy=(dx_, dy_), xytext=(dx_, dy_ + 0.45), fontsize=8, fontweight="bold", color="#111", ha="center", va="bottom", bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="#888", lw=0.4, alpha=0.85), zorder=8)
+
+        ax.add_patch(Circle((ox, oy), 0.9, color="gold", alpha=0.22, zorder=6))
+        ax.plot(ox, oy, marker="*", markersize=22, color="#FFD700", markeredgecolor="#222", markeredgewidth=1.2, zorder=9)
+        ax.annotate(f"⭐ {dept_name}", xy=(ox, oy + 1.05), fontsize=9, fontweight="bold", ha="center", bbox=dict(boxstyle="round,pad=0.25", fc="lightyellow", ec="#B8860B", lw=0.8), zorder=10)
+        ax.set_title(f"Propagación espacial — {key}\nOrigen: {dept_name}  ·  ρ = {rho_eff:.3f}", fontsize=10, fontweight="bold")
+
     ax.set_xlim(-80, -66); ax.set_ylim(-5, 14); ax.axis("off")
-
     buf = _Bio()
     fig.savefig(buf, format="png", dpi=110, bbox_inches="tight", pad_inches=0.1)
     plt.close(fig)
@@ -546,37 +564,53 @@ def create_spvar_propagation_png(gdf_map, A_system, S_system, K_spvar, N_spvar, 
     bounds = gdf_map.total_bounds
     xpad = (bounds[2] - bounds[0]) * 0.08; ypad = (bounds[3] - bounds[1]) * 0.08
 
+    def _fmt(val):
+        if abs(val) >= 0.01: return f"{val:+.3f}%"
+        elif abs(val) >= 0.0001: return f"{val:+.5f}%"
+        elif abs(val) > 1e-8: return f"{val:+.2e}%"
+        return "~0.00%"
+
     for ax_i, k_idx in zip(axes, k_indices):
-        impact_pct = total[k_idx]
+        impact_pct = np.nan_to_num(total[k_idx], nan=0.0, posinf=0.0, neginf=0.0)
         abs_imp = np.abs(impact_pct)
-        max_abs = float(abs_imp.max()) if abs_imp.max() > 1e-6 else 1e-6
-        order = np.argsort(abs_imp)[::-1]
-        top_idx = [i for i in order if i != shock_dept_idx and abs_imp[i] > max_abs * 0.05][:top_k]
+        max_abs = float(abs_imp.max())
 
-        gdf_plot = gdf_map.copy(); gdf_plot["_impact"] = impact_pct
-        gdf_plot.plot(column="_impact", ax=ax_i, cmap="RdBu_r", vmin=-max(max_abs, 0.0001), vmax=max(max_abs, 0.0001), edgecolor="#2c2c2c", linewidth=0.7)
+        gdf_plot = gdf_map.copy()
+        
+        if max_abs < 1e-5:
+            gdf_plot.plot(color="#e0e0e0", ax=ax_i, edgecolor="#2c2c2c", linewidth=0.7)
+            ax_i.set_title(f"Δ {SPVAR_VARS[k_idx]}  ←  shock en {shock_var}\nImpacto nulo o despreciable", fontsize=10, fontweight="bold")
+        else:
+            gdf_plot["_impact"] = impact_pct
+            gdf_plot.plot(column="_impact", ax=ax_i, cmap="RdBu_r", vmin=-max_abs, vmax=max_abs, edgecolor="#2c2c2c", linewidth=0.7)
 
-        for rank, dest in enumerate(top_idx):
-            dx_, dy_ = centroids[dest]
-            color = "#d92d2d" if impact_pct[dest] > 0 else "#3360dc"
-            ax_i.add_patch(FancyArrowPatch((ox, oy), (dx_, dy_), arrowstyle="-|>", mutation_scale=8 + 4 * (abs_imp[dest] / max_abs), color=color, alpha=0.75, linewidth=1.0 + 1.5 * (abs_imp[dest] / max_abs), connectionstyle="arc3,rad=0.1", shrinkA=15, shrinkB=15, zorder=5))
-            if rank < 4:
-                ax_i.annotate(f"{impact_pct[dest]:+.3f}%", xy=(dx_, dy_), xytext=(dx_, dy_ + 0.4), fontsize=8, fontweight="bold", ha="center", va="bottom", path_effects=[pe.withStroke(linewidth=2.5, foreground="white")], zorder=9)
+            order = np.argsort(abs_imp)[::-1]
+            top_idx = [i for i in order if i != shock_dept_idx and abs_imp[i] > max_abs * 0.10][:top_k]
 
-        ax_i.add_patch(Circle((ox, oy), 0.6, color="gold", alpha=0.25, zorder=6))
-        ax_i.plot(ox, oy, marker="*", markersize=20, color="#FFD700", markeredgecolor="#111", markeredgewidth=1.0, zorder=10)
-        ax_i.set_title(f"Δ {SPVAR_VARS[k_idx]}  ←  shock en {shock_var}\nOrigen: {impact_pct[shock_dept_idx]:+.3f}%", fontsize=10, fontweight="bold")
-        ax_i.set_xlim(bounds[0] - xpad, bounds[2] + xpad); ax_i.set_ylim(bounds[1] - ypad, bounds[3] + ypad)
-        ax_i.set_aspect("equal"); ax_i.set_axis_off()
+            for rank, dest in enumerate(top_idx):
+                dx_, dy_ = centroids[dest]
+                color = "#d92d2d" if impact_pct[dest] > 0 else "#3360dc"
+                ax_i.add_patch(FancyArrowPatch((ox, oy), (dx_, dy_), arrowstyle="-|>", mutation_scale=8 + 4 * (abs_imp[dest] / max_abs), color=color, alpha=0.75, linewidth=1.0 + 1.5 * (abs_imp[dest] / max_abs), connectionstyle="arc3,rad=0.1", shrinkA=15, shrinkB=15, zorder=5))
+                if rank < 4:
+                    ax_i.annotate(_fmt(impact_pct[dest]), xy=(dx_, dy_), xytext=(dx_, dy_ + 0.4), fontsize=8, fontweight="bold", ha="center", va="bottom", path_effects=[pe.withStroke(linewidth=2.5, foreground="white")], zorder=9)
+
+            ax_i.add_patch(Circle((ox, oy), 0.6, color="gold", alpha=0.25, zorder=6))
+            ax_i.plot(ox, oy, marker="*", markersize=20, color="#FFD700", markeredgecolor="#111", markeredgewidth=1.0, zorder=10)
+            ax_i.set_title(f"Δ {SPVAR_VARS[k_idx]}  ←  shock en {shock_var}\nOrigen: {_fmt(impact_pct[shock_dept_idx])}", fontsize=10, fontweight="bold")
+
+        ax_i.set_xlim(bounds[0] - xpad, bounds[2] + xpad)
+        ax_i.set_ylim(bounds[1] - ypad, bounds[3] + ypad)
+        ax_i.set_aspect("equal")
+        ax_i.set_axis_off()
 
     for ax in axes[len(k_indices):]: ax.set_axis_off()
-    fig.legend(handles=[Line2D([0], [0], color="#d92d2d", lw=2, label="Spillover (+ )"), Line2D([0], [0], color="#3360dc", lw=2, label="Spillover (−)"), Line2D([0], [0], marker="*", color="gold", lw=0, markersize=14, markeredgecolor="#111", label="Origen")], loc="lower center", ncol=3, fontsize=9, bbox_to_anchor=(0.5, 0.02))
+    fig.legend(handles=[Line2D([0], [0], color="#d92d2d", lw=2, label="Spillover (+)"), Line2D([0], [0], color="#3360dc", lw=2, label="Spillover (−)"), Line2D([0], [0], marker="*", color="gold", lw=0, markersize=14, markeredgecolor="#111", label="Origen")], loc="lower center", ncol=3, fontsize=9, bbox_to_anchor=(0.5, 0.02))
     plt.tight_layout(rect=[0, 0.04, 1, 0.95])
 
     buf = _Bio()
     fig.savefig(buf, format="png", dpi=120, bbox_inches="tight", pad_inches=0.1); plt.close(fig)
     return buf.getvalue()
-
+  
 def plot_spvar_espacial_heatmap(A_system, S_system, K_spvar, N_spvar, SPVAR_VARS, dept_names, shock_var, shock_dept_idx, shock_size=0.05):
     res = spvar_espacial_irf(A_system, S_system, K_spvar, N_spvar, shock_var, shock_dept_idx, SPVAR_VARS, shock_size, horizon=1)
     total = res["total"] * 100
