@@ -426,11 +426,50 @@ def crear_choropleth(gdf_map, var):
     df_plot = gdf_map[[COD_DANE_COL, NOMBRE_COL, var]].copy()
     df_plot[COD_DANE_COL] = df_plot[COD_DANE_COL].astype(str)
     df_plot[var] = pd.to_numeric(df_plot[var], errors="coerce")
+    
+    # DICCIONARIO DE COLORES POR VARIABLE
+    color_scales = {
+        "log_industria": "YlOrRd",       # Amarillo a Rojo (Fuego)
+        "gini": "Reds",                  # Tonos rojos (Alerta/Desigualdad)
+        "educacion_superior": "Blues",   # Tonos azules (Educación)
+        "log_pib_percapita": "Greens",   # Tonos verdes (Riqueza)
+        "log_poblacion": "Purples"       # Tonos morados (Población)
+    }
+    escala = color_scales.get(var, "Viridis")
+    
+    # Formato de números para el tooltip
+    formato_num = ".3f" if var == "gini" else ".2f"
+    
     geojson = {"type": "FeatureCollection", "features": [{"type": "Feature", "id": str(row[COD_DANE_COL]), "properties": {COD_DANE_COL: str(row[COD_DANE_COL]), NOMBRE_COL: str(row[NOMBRE_COL])}, "geometry": row["geometry"].__geo_interface__} for _, row in gdf_map.iterrows()]}
-    fig = px.choropleth(df_plot, geojson=geojson, locations=COD_DANE_COL, featureidkey=f"properties.{COD_DANE_COL}", color=var, hover_name=NOMBRE_COL, color_continuous_scale="YlOrRd")
+    
+    fig = px.choropleth(
+        df_plot, 
+        geojson=geojson, 
+        locations=COD_DANE_COL, 
+        featureidkey=f"properties.{COD_DANE_COL}", 
+        color=var, 
+        hover_name=NOMBRE_COL, 
+        hover_data={COD_DANE_COL: False, var: formato_num},
+        color_continuous_scale=escala,
+        range_color=(df_plot[var].min(), df_plot[var].max()) # Fuerza el contraste usando el min y max reales
+    )
+    
     fig.update_geos(fitbounds="locations", visible=False, projection_type="mercator", lataxis_range=[-5, 14], lonaxis_range=[-80, -66])
     fig.update_traces(marker_line_color="white", marker_line_width=0.5)
-    fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=500)
+    
+    # Título dinámico y colorbar personalizada
+    fig.update_layout(
+        margin=dict(l=10, r=10, t=50, b=10), 
+        height=500,
+        coloraxis_colorbar=dict(
+            title=dict(text=var, side="right"),
+            thickness=20,
+            len=0.8,
+            x=1.0,
+            xpad=10,
+            tickformat=formato_num
+        )
+    )
     return fig
 
 def crear_lisa_map(gdf_map, lisa_Y):
