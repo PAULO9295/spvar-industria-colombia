@@ -658,7 +658,8 @@ VAR_LABELS = {
     "log_industria": "Nivel de Industria Manufacturera",
     "gini": "Desigualdad (Índice Gini)",
     "educacion_superior": "Cobertura en Educación Superior",
-    "log_pib_percapita": "Riqueza (PIB per cápita)"
+    "log_pib_percapita": "Riqueza (PIB per cápita)",
+    "log_poblacion": "Tamaño de Mercado (Log Población)" 
 }
 
 # --- INTRODUCCIÓN Y CONTEXTO ---
@@ -731,7 +732,8 @@ with tabs[1]:
     st.markdown("Explora visualmente cómo se distribuyen las variables en Colombia y dónde hay clústeres (grupos) significativos.")
     col1, col2 = st.columns(2)
     with col1:
-        var_sel = st.selectbox("Variable a mapear", ["log_industria", "gini", "educacion_superior", "log_pib_percapita"], format_func=lambda x: VAR_LABELS.get(x, x), help="Selecciona qué variable quieres ver en el mapa de calor.")
+        # AGREGA "log_poblacion" A LA LISTA AQUÍ ABAJO 👇
+        var_sel = st.selectbox("Variable a mapear", ["log_industria", "gini", "educacion_superior", "log_pib_percapita", "log_poblacion"], format_func=lambda x: VAR_LABELS.get(x, x), help="Selecciona qué variable quieres ver en el mapa de calor.")
         st.plotly_chart(crear_choropleth(gdf_map, var_sel), use_container_width=True)
     with col2:
         st.subheader("Clústeres LISA")
