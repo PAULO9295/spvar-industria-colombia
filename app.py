@@ -1049,11 +1049,7 @@ with tabs[4]:
         with st.chat_message("assistant"): 
             st.markdown(resp)
     
-    # --- REPORTE PDF ---
-    st.markdown("---")
-    st.subheader("Reporte PDF")
-    st.write("Genera un documento formal con los resultados de la estimación principal.")
-      if st.button("Generar PDF"):
+    if st.button("Generar PDF"):
         with st.spinner("Generando PDF y renderizando mapas (esto puede tardar unos segundos)..."):
             from io import BytesIO
             from reportlab.lib.pagesizes import A4
