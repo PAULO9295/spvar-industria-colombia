@@ -707,6 +707,7 @@ st.markdown("""
 ### ¿De qué trata esta aplicación?
 Esta herramienta interactiva analiza cómo la geografía y los departamentos vecinos influyen en la **industria manufacturera** de Colombia. 
 Utilizando datos oficiales y modelos econométricos espaciales, puedes explorar si las regiones industriales están agrupadas, y simular cómo cambios en la educación, la desigualdad o la riqueza de un departamento "contagian" o afectan a todo el país.
+
 AUTOR: PAULO ZAMBRANO
 """)
 
