@@ -120,40 +120,75 @@ def cargar_datos():
     gdf_geo[NOMBRE_COL] = gdf_geo[NOMBRE_COL].apply(normalizar_nombre_depto)
     gdf_geo = gdf_geo[[COD_DANE_COL, NOMBRE_COL, "geometry"]]
 
-    # --- FUNCIÓN MAESTRA (Búsqueda inteligente) ---
+    # --- FUNCIÓN DE EXTRACCIÓN ---
     def extraer_datos_excel(file_id, sheet_name, es_industria=False):
         df_raw = leer_excel_drive(file_id, sheet_name=sheet_name, header=None)
         
-        # BÚSQUEDA INFALIBLE: Encontrar la fila con más años (2000-2030)
-        best_row_idx = 0
-        max_years = 0
-        
-        for i in range(min(40, len(df_raw))): # Revisar las primeras 40 filas
-            row_vals = df_raw.iloc[i].values
-            years_found = 0
-            for val in row_vals:
-                try:
-                    val_str = str(val).replace(".0", "").strip()
-                    if val_str.isdigit() and 2000 <= int(val_str) <= 2030:
-                        years_found += 1
-                    elif any(str(y) in val_str for y in range(2000, 2030)):
-                        years_found += 1
-                except:
-                    pass
+        if es_industria:
+            # LÓGICA EXACTA DE TU COLAB
+            titulo_idx = None
+            for i in range(len(df_raw)):
+                cell0 = str(df_raw.iloc[i, 0]) if pd.notna(df_raw.iloc[i, 0]) else ""
+                if "Industrias manufactureras" in cell0 or "Industria manufacturera" in cell0:
+                    titulo_idx = i
+                    break
+
+            header_idx = None
+            if titulo_idx is not None:
+                for i in range(titulo_idx + 1, min(titulo_idx + 15, len(df_raw))):
+                    row_str = " ".join(map(str, df_raw.iloc[i].values)).upper()
+                    if "DEPARTAMENTOS" in row_str and ("2005" in row_str or "2010" in row_str):
+                        header_idx = i
+                        break
             
-            if years_found > max_years:
-                max_years = years_found
-                best_row_idx = i
+            if header_idx is None:
+                raise ValueError("No se encontró el encabezado de Industria.")
+
+            start = header_idx + 1
+            end = start
+            for i in range(start, min(start + 50, len(df_raw))):
+                cell0 = str(df_raw.iloc[i, 0]) if pd.notna(df_raw.iloc[i, 0]) else ""
+                cell1 = str(df_raw.iloc[i, 1]) if pd.notna(df_raw.iloc[i, 1]) else ""
+                if any(x in cell0 for x in ["Valor agregado", "Producto Interno", "Suministro de", "Construcción", "Comercio"]):
+                    break
+                if cell0 == "nan" and cell1 == "nan" and i > start + 35:
+                    break
+                end = i + 1
                 
-        if max_years < 3:
-            raise ValueError(f"No se pudo encontrar la fila de años en {sheet_name}.")
-            
-        header_idx = best_row_idx
-        headers = [str(h).strip() if pd.notna(h) else f"col_{j}" for j, h in enumerate(df_raw.iloc[header_idx].tolist())]
-        
-        # Extracción de la columna del año
+            df = df_raw.iloc[start:end].copy()
+            headers = [str(h).strip() if pd.notna(h) else f"col_{j}" for j, h in enumerate(df_raw.iloc[header_idx].tolist())]
+            df.columns = headers
+            df = df.reset_index(drop=True)
+
+        else:
+            # BÚSQUEDA INTELIGENTE PARA PIB Y EDUCACIÓN (Funciona bien)
+            best_row_idx = 0
+            max_years = 0
+            for i in range(min(40, len(df_raw))):
+                row_vals = df_raw.iloc[i].values
+                years_found = 0
+                for val in row_vals:
+                    try:
+                        val_str = str(val).replace(".0", "").strip()
+                        if val_str.isdigit() and 2000 <= int(val_str) <= 2030:
+                            years_found += 1
+                        elif any(str(y) in val_str for y in range(2000, 2030)):
+                            years_found += 1
+                    except: pass
+                if years_found > max_years:
+                    max_years = years_found
+                    best_row_idx = i
+
+            header_idx = best_row_idx
+            headers = [str(h).strip() if pd.notna(h) else f"col_{j}" for j, h in enumerate(df_raw.iloc[header_idx].tolist())]
+            df = df_raw.iloc[header_idx+1:].copy()
+            df.columns = headers
+            df = df.reset_index(drop=True)
+
+        # EXTRACCIÓN DE AÑOS Y VALORES
         year_pos = {}
         for j, c in enumerate(headers):
+            if j < 2 and not es_industria: continue
             match = re.search(r'(20\d{2})', str(c))
             if match:
                 y = int(match.group(1))
@@ -161,37 +196,27 @@ def cargar_datos():
                     year_pos[y] = j
 
         if not year_pos:
-            # Si los años estaban como números puros y no como texto
-            for j, c in enumerate(headers):
-                try:
-                    y = int(float(c))
-                    if 2000 <= y <= 2030 and y not in year_pos:
-                        year_pos[y] = j
-                except:
-                    pass
-                    
-        if not year_pos:
-            raise ValueError(f"Fila encontrada, pero no se leyeron años válidos en {sheet_name}.")
+            raise ValueError(f"No se encontraron años en el encabezado de {sheet_name}.")
             
         anio_usado = min(year_pos.keys(), key=lambda y: abs(y - 2019))
         pos_anio = year_pos[anio_usado]
 
-        nombres = df_raw.iloc[header_idx+1:, 1]
-        valores = df_raw.iloc[header_idx+1:, pos_anio]
-
+        nombres = df.iloc[:, 1]
+        valores = df.iloc[:, pos_anio]
         if isinstance(nombres, pd.DataFrame): nombres = nombres.iloc[:, 0]
         if isinstance(valores, pd.DataFrame): valores = valores.iloc[:, 0]
 
-        df = pd.DataFrame({
+        result = pd.DataFrame({
             "raw_name": nombres.values,
             "valor": pd.to_numeric(valores.values, errors="coerce")
         })
-        df = df.dropna(subset=["valor"])
-        df = df[~df["raw_name"].astype(str).str.upper().str.contains("COLOMBIA|TOTAL|NACIONAL", na=False)]
-        df[NOMBRE_COL] = df["raw_name"].apply(normalizar_nombre_depto)
-        df = df[df[NOMBRE_COL].notna()]
-        df = df.drop_duplicates(subset=[NOMBRE_COL], keep="first")
-        return df[[NOMBRE_COL, "valor"]]
+        result = result.dropna(subset=["valor"])
+        result = result[~result["raw_name"].astype(str).str.upper().str.contains("COLOMBIA|TOTAL|NACIONAL", na=False)]
+        result[NOMBRE_COL] = result["raw_name"].apply(normalizar_nombre_depto)
+        result = result[result[NOMBRE_COL].notna()]
+        result = result.drop_duplicates(subset=[NOMBRE_COL], keep="first")
+        
+        return result[[NOMBRE_COL, "valor"]]
 
     # --- 2. PROCESAMIENTO ---
     industria = extraer_datos_excel(ID_INDUSTRIA, "Cuadro 2", es_industria=True).rename(columns={"valor": "industrializacion_constante"})
